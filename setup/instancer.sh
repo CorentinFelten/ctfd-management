@@ -80,11 +80,13 @@ configure_instancer() {
     local working_dir="${CONFIG[WORKING_DIR]}"
     local config_path="$working_dir/data/galvanize/config.yaml"
 
-    sed -i "s|your-secret-key-here|${CONFIG[JWT_SECRET_KEY]}|g"  "$config_path" # Setting up JWT
-    sed -i "s|your-ssh-user|$ANSIBLE_USER|g"                     "$config_path" # Setting up Ansible user
-    sed -i "s|your-server-ip,|${CONFIG[CTFD_URL]},|g"            "$config_path" # Setting up server IP / base domain
-    sed -i "s|challs.example.com|${CONFIG[CTFD_URL]}|g"          "$config_path" # Setting up public hostname of the deployer 
-    sed -i "s|localhost:6379|redis:6379|g"                       "$config_path" # Setting up redis connection for instancer
+    sed -i "s|your-secret-key-here|${CONFIG[JWT_SECRET_KEY]}|g"          "$config_path" # Setting up JWT
+    sed -i "s|your-ssh-user|$ANSIBLE_USER|g"                             "$config_path" # Setting up Ansible user
+    sed -i "s|your-server-ip,|${CONFIG[CTFD_URL]},|g"                    "$config_path" # Setting up server IP / base domain
+    sed -i "s|challs.example.com|${CONFIG[CTFD_URL]}|g"                  "$config_path" # Setting up public hostname of the deployer 
+    sed -i "s|localhost:6379|redis:6379|g"                               "$config_path" # Setting up redis connection for instancer
+    sed -i 's|example_param: "example_value"|traefik_network: "proxy"|g' "$config_path" # Setting up traefik network
+
 
     log_success "Local instancer setup complete"
 }
