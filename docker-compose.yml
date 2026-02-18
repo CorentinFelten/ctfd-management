@@ -11,6 +11,7 @@ services:
       - "traefik.enable=true"
       # The static traefik.yml already handles HTTP→HTTPS redirect and default TLS.
       # Labels only need routing rule, middleware, and service port.
+      - "traefik.docker.network=infra_proxy"
       - "traefik.http.routers.ctfd.rule=Host(`${BASE_DOMAIN}`)"
       - "traefik.http.routers.ctfd.middlewares=security-headers@file"
       - "traefik.http.services.ctfd.loadbalancer.server.port=8000"
@@ -100,6 +101,11 @@ services:
       - ${DATA_DIR:-../data}/redis:/data
     networks:
       - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   instancer:
     image: ghcr.io/28pollux28/galvanize:latest
@@ -109,7 +115,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - "DEVELOPMENT=${DEVELOPMENT:-true}"
+      - "DEVELOPMENT=${DEVELOPMENT:-false}"
     entrypoint:
       - "./galvanize"
       - "serve"
@@ -130,8 +136,11 @@ services:
     depends_on:
       ctfd:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - proxy
+      - internal
 
 networks:
   proxy:
