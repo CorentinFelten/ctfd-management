@@ -9,25 +9,26 @@ readonly _CHALL_BUILD_LOADED=1
 
 _build_single() {
     local category="$1" challenge="$2"
-    local challenge_name challenge_yml docker_image dockerfile_name=""
+    local challenge_name challenge_folder challenge_yml docker_image dockerfile_name=""
 
-    challenge_name="$(basename "$challenge")"
-    challenge_yml="$category/$challenge_name/challenge.yml"
+    challenge_folder="$(basename "$challenge")"
+    challenge_yml="$category/$challenge_folder/challenge.yml"
+    challenge_name="$(get_challenge_info "$challenge_yml" "name")"
 
-    [[ -f "$challenge_yml" ]] || { log_warning "No challenge.yml for: $challenge_name"; return 1; }
+    [[ -f "$challenge_yml" ]] || { log_warning "No challenge.yml for: $challenge_folder"; return 1; }
 
     local challenge_type
     challenge_type="$(get_challenge_info "$challenge_yml" "type")"
-    [[ "$challenge_type" == "docker" ]] || {
+    [[ "$challenge_type" == "zync" ]] || {
         log_debug "Skipping non-docker challenge: $challenge_name (type: ${challenge_type:-unknown})"
         return 0
     }
 
-    docker_image="$(get_challenge_info "$challenge_yml" "docker_image")"
-    [[ -n "$docker_image" ]] || { log_error "No docker_image in challenge.yml for: $challenge_name"; return 1; }
+    docker_image="$(get_challenge_info "$challenge_yml" "image")"
+    [[ -n "$docker_image" ]] || { log_error "No image in challenge.yml for: $challenge_name"; return 1; }
 
     local dockerfile
-    for dockerfile in "$category/$challenge_name"/[Dd]ockerfile*; do
+    for dockerfile in "$category/$challenge_folder"/[Dd]ockerfile*; do
         [[ -f "$dockerfile" ]] && { dockerfile_name="$(basename "$dockerfile")"; break; }
     done
     [[ -n "$dockerfile_name" ]] || { log_error "No Dockerfile for challenge: $challenge_name"; return 1; }
@@ -38,7 +39,7 @@ _build_single() {
         local -a build_args=()
         [[ "${CONFIG[FORCE]}" == "true" ]] && build_args+=(--no-cache)
 
-        (cd "$category/$challenge_name" && docker build "${build_args[@]}" . -t "$docker_image" -f "$dockerfile_name") || {
+        (cd "$category/$challenge_folder" && docker build "${build_args[@]}" . -t "$docker_image" -f "$dockerfile_name") || {
             log_error "Failed to build $challenge_name"
             return 1
         }
@@ -52,10 +53,11 @@ _build_single() {
 
 _build_single_quiet() {
     local category="$1" challenge="$2" status_file="$3"
-    local challenge_name challenge_yml docker_image dockerfile_name=""
+    local challenge_name challenge_folder challenge_yml docker_image dockerfile_name=""
 
-    challenge_name="$(basename "$challenge")"
-    challenge_yml="$category/$challenge_name/challenge.yml"
+    challenge_folder="$(basename "$challenge")"
+    challenge_yml="$category/$challenge_folder/challenge.yml"
+    challenge_name="$(get_challenge_info "$challenge_yml" "name")"
 
     if [[ ! -f "$challenge_yml" ]]; then
         echo "FAIL:${challenge_name}" > "$status_file"; return 1
@@ -63,17 +65,17 @@ _build_single_quiet() {
 
     local challenge_type
     challenge_type="$(get_challenge_info "$challenge_yml" "type")"
-    if [[ "$challenge_type" != "docker" ]]; then
+    if [[ "$challenge_type" != "zync" ]]; then
         echo "SKIP:${challenge_name}" > "$status_file"; return 0
     fi
 
-    docker_image="$(get_challenge_info "$challenge_yml" "docker_image")"
+    docker_image="$(get_challenge_info "$challenge_yml" "image")"
     if [[ -z "$docker_image" ]]; then
         echo "FAIL:${challenge_name}" > "$status_file"; return 1
     fi
 
     local dockerfile
-    for dockerfile in "$category/$challenge_name"/[Dd]ockerfile*; do
+    for dockerfile in "$category/$challenge_folder"/[Dd]ockerfile*; do
         [[ -f "$dockerfile" ]] && { dockerfile_name="$(basename "$dockerfile")"; break; }
     done
     if [[ -z "$dockerfile_name" ]]; then
@@ -86,7 +88,7 @@ _build_single_quiet() {
     local build_log
     build_log="$(mktemp "/tmp/ctf_build_${challenge_name}_XXXXXX.log")"
 
-    if (cd "$category/$challenge_name" && docker build "${build_args[@]}" . -t "$docker_image" -f "$dockerfile_name" >> "$build_log" 2>&1); then
+    if (cd "$category/$challenge_folder" && docker build "${build_args[@]}" . -t "$docker_image" -f "$dockerfile_name" >> "$build_log" 2>&1); then
         rm -f "$build_log"
         echo "SUCCESS:${challenge_name}" > "$status_file"
     else
@@ -147,7 +149,7 @@ build_challenges() {
             if [[ -f "$yml" ]]; then
                 local ctype
                 ctype="$(get_challenge_info "$yml" "type")"
-                if [[ "$ctype" == "docker" ]]; then
+                if [[ "$ctype" == "zync" ]]; then
                     to_build+=("$category:$challenge")
                     ((++total))
                 fi

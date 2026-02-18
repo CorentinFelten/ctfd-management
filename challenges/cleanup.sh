@@ -22,7 +22,7 @@ cleanup_docker() {
             ctype="$(get_challenge_info "$yml" "type")"
             if [[ "$ctype" == "docker" ]]; then
                 local img
-                img="$(get_challenge_info "$yml" "docker_image")"
+                img="$(get_challenge_info "$yml" "image")"
                 [[ -n "$img" ]] && images+=("$img")
             fi
         done

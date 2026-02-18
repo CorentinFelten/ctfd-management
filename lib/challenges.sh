@@ -50,25 +50,25 @@ should_process_challenge() {
     return 0
 }
 
-# ── Extract a field from challenge.yml (lightweight, no YAML parser) ────────
+# ── Extract a field from challenge.yml using yq ─────────────────────────────
 
 get_challenge_info() {
     local challenge_yml="$1" info_type="$2"
+    [[ -f "$challenge_yml" ]] || return 1
 
+    # Map legacy short names to yq paths
+    local yq_path
     case "$info_type" in
-        type)
-            grep '^type:' "$challenge_yml" 2>/dev/null \
-                | sed -E 's/^type:[[:space:]]*//' | tr -d '"'
-            ;;
-        docker_image)
-            grep '^[[:space:]]*docker_image:' "$challenge_yml" 2>/dev/null \
-                | sed -E 's/^[[:space:]]*docker_image:[[:space:]]*//' | tr -d '"'
-            ;;
-        name)
-            grep '^name:' "$challenge_yml" 2>/dev/null \
-                | sed -E 's/^name:[[:space:]]*//' | tr -d '"'
-            ;;
+        name)  yq_path=".name" ;;
+        type)  yq_path=".type" ;;
+        image) yq_path=".deploy_parameters.image" ;;
+        .*)    yq_path="$info_type" ;;           # already a yq path
+        *)     yq_path=".$info_type" ;;           # bare key -> .key
     esac
+
+    local result
+    result="$(yq "$yq_path" "$challenge_yml" 2>/dev/null)" || return 1
+    [[ -n "$result" && "$result" != "null" ]] && printf '%s' "$result"
 }
 
 # ── Deploy a single challenge's docker-compose stack ────────────────────────
