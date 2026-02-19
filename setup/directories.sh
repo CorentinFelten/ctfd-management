@@ -14,7 +14,7 @@ create_and_set_owner() {
     mkdir -p "$working_dir/data/CTFd/logs"
     mkdir -p "$working_dir/data/galvanize/challenges"
     mkdir -p "$working_dir/data/galvanize/playbooks"
-    mkdir -p "$working_dir/infra/traefik-config/letsencrypt"
+    mkdir -p "$SCRIPT_DIR/traefik-config/letsencrypt"
 
     chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$working_dir/data"
 

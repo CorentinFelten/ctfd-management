@@ -10,7 +10,7 @@ readonly DOCKER_INSTANCER_REPO="https://github.com/28Pollux28/galvanize"  # clon
 
 install_ctfd() {
     local working_dir="${CONFIG[WORKING_DIR]}"
-    local infra_dir="$working_dir/infra"
+    local infra_dir="$SCRIPT_DIR"
     local plugin_name="zync"
     local plugin_path="$working_dir/$plugin_name"
     local compose_file="$infra_dir/docker-compose.yml"
@@ -127,8 +127,10 @@ install_ctfd() {
         fi
     fi
 
-    log_info "To start the CTFd containers, please run:"
-    log_info "  docker compose -f '${compose_file}' up -d"
+    # ── Start containers ──
+    log_info "Starting CTFd containers..."
+    docker compose -f "$compose_file" up -d
+    log_success "CTFd containers started successfully"
     log_success "CTFd installation complete!"
 
     # ── Write secrets to secured file ──

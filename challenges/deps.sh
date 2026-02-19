@@ -120,7 +120,7 @@ initialize_ctfd_config() {
     trap 'echo >&2; error_exit "Configuration aborted by user"' INT
     
     # Auto-detect CTFd URL from the .env file produced by setup.sh
-    local env_file="${CONFIG[WORKING_DIR]}/infra/.env"
+    local env_file="${SCRIPT_DIR}/.env"
     local base_domain="" enable_tls=""
     
     if [[ -f "$env_file" ]]; then

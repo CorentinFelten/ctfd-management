@@ -50,7 +50,7 @@ Options:
                             (automatically enabled for IP addresses)
     --help                  Show this help message
 
-Directory structure (created under <working-folder>/infra/):
+Directory structure (created under <working-folder>/<this-repo-folder>/):
     traefik-config/         Traefik static & dynamic configs, letsencrypt storage
     ctfd-config/            CTFd Dockerfile and custom entrypoint
     backup/                 Database backup & restore scripts

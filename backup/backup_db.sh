@@ -7,12 +7,14 @@
 set -euo pipefail
 
 # ============================================================================
-# Configuration — Modify these paths to match your deployment
+# Configuration
 # ============================================================================
 
-readonly BASE_PATH="/home/${SUDO_USER:-$USER}"
-readonly ENV_FILE="${BASE_PATH}/infra/.env"
-readonly DOCKER_COMPOSE_PATH="${BASE_PATH}/infra/docker-compose.yml"
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly INFRA_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+readonly BASE_PATH="$(cd "$INFRA_DIR/.." && pwd)"
+readonly ENV_FILE="${INFRA_DIR}/.env"
+readonly DOCKER_COMPOSE_PATH="${INFRA_DIR}/docker-compose.yml"
 readonly BACKUP_BASE_DIR="${BASE_PATH}/backups"
 readonly CTFD_UPLOADS_PATH="${BASE_PATH}/data/CTFd/uploads"
 readonly MAX_BACKUPS=5

@@ -6,8 +6,7 @@
 readonly _SETUP_BACKUP_LOADED=1
 
 setup_backup_script() {
-    local working_dir="${CONFIG[WORKING_DIR]}"
-    local backup_script="$working_dir/infra/backup/backup_db.sh"
+    local backup_script="$SCRIPT_DIR/backup/backup_db.sh"
 
     log_info "Setting up database backup script..."
 
@@ -20,7 +19,7 @@ setup_backup_script() {
     chmod +x "$backup_script"
     chown "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$backup_script"
 
-    local restore_script="$working_dir/infra/backup/restore_db.sh"
+    local restore_script="$SCRIPT_DIR/backup/restore_db.sh"
     if [[ -f "$restore_script" ]]; then
         chmod +x "$restore_script"
         chown "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$restore_script"
@@ -30,8 +29,8 @@ setup_backup_script() {
 }
 
 setup_backup_cron() {
+    local backup_script="$SCRIPT_DIR/backup/backup_db.sh"
     local working_dir="${CONFIG[WORKING_DIR]}"
-    local backup_script="$working_dir/infra/backup/backup_db.sh"
     local cron_log="$working_dir/cron_backup.log"
     local user="${SUDO_USER:-$USER}"
     local schedule="${CONFIG[BACKUP_SCHEDULE]}"

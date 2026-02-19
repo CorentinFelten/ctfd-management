@@ -5,14 +5,14 @@
 [[ -n "${_LIB_ENV_LOADED:-}" ]] && return 0
 readonly _LIB_ENV_LOADED=1
 
-# ── Write or update a key in the infra .env file ────────────────────────────
+# ── Write or update a key in the .env file ──────────────────────────────────
 
 setup_env_key() {
     local key="$1" value="$2"
-    local env_file="${CONFIG[WORKING_DIR]}/infra/.env"
+    local env_file="${SCRIPT_DIR}/.env"
 
     if [[ ! -f "$env_file" ]]; then
-        cp "${CONFIG[WORKING_DIR]}/infra/${CONFIG[DOCKER_ENV_FILE]}" "$env_file"
+        cp "${SCRIPT_DIR}/${CONFIG[DOCKER_ENV_FILE]}" "$env_file"
     fi
 
     if grep -q "^${key}=" "$env_file"; then
