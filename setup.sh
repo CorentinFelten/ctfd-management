@@ -40,7 +40,7 @@ show_usage() {
 Usage: $SCRIPT_NAME [OPTIONS]
 
 Options:
-    --ctfd-url URL          Set CTFd URL (mandatory)
+    --domain URL          Set CTFd URL (mandatory)
                             Note: IP addresses automatically enable --no-https
     --working-folder DIR    Set working directory (default: /home/\$USER)
     --theme PATH_OR_URL     Path to local theme folder or Git URL to clone
@@ -56,12 +56,12 @@ Directory structure (created under <working-folder>/infra/):
     backup/                 Database backup & restore scripts
 
 Examples:
-    $SCRIPT_NAME --ctfd-url example.com
-    $SCRIPT_NAME --ctfd-url 192.168.1.100
-    $SCRIPT_NAME --ctfd-url example.com --working-folder /opt/ctfd
-    $SCRIPT_NAME --ctfd-url example.com --theme /home/user/my-custom-theme
-    $SCRIPT_NAME --ctfd-url example.com --theme https://github.com/user/theme.git
-    $SCRIPT_NAME --ctfd-url example.com --backup-schedule hourly
+    $SCRIPT_NAME --domain example.com
+    $SCRIPT_NAME --domain 192.168.1.100
+    $SCRIPT_NAME --domain example.com --working-folder /opt/ctfd
+    $SCRIPT_NAME --domain example.com --theme /home/user/my-custom-theme
+    $SCRIPT_NAME --domain example.com --theme https://github.com/user/theme.git
+    $SCRIPT_NAME --domain example.com --backup-schedule hourly
 EOF
 }
 
@@ -70,9 +70,9 @@ EOF
 parse_arguments() {
     while [[ $# -gt 0 ]]; do
         case $1 in
-            --ctfd-url)
-                [[ -n ${2:-} ]] || error_exit "Missing value for --ctfd-url"
-                CONFIG[CTFD_URL]="$2"; shift 2 ;;
+            --domain)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --domain"
+                CONFIG[DOMAIN]="$2"; shift 2 ;;
             --working-folder)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --working-folder"
                 CONFIG[WORKING_DIR]="$2"; shift 2 ;;
@@ -98,11 +98,15 @@ parse_arguments() {
         esac
     done
 
-    [[ -n ${CONFIG[CTFD_URL]:-} ]] \
-        || error_exit "Error: --ctfd-url is mandatory and must be specified."
+    [[ -n ${CONFIG[DOMAIN]:-} ]] \
+        || error_exit "Error: --domain is mandatory and must be specified."
 
-    if [[ -z ${CONFIG[NO_HTTPS]:-} ]] && is_ip_address "${CONFIG[CTFD_URL]}"; then
-        log_info "Detected IP address in --ctfd-url, automatically enabling --no-https"
+    CONFIG[DOMAIN]="${CONFIG[DOMAIN]#https://}"
+    CONFIG[DOMAIN]="${CONFIG[DOMAIN]#http://}"
+    CONFIG[DOMAIN]="${CONFIG[DOMAIN]%%/*}"
+
+    if [[ -z ${CONFIG[NO_HTTPS]:-} ]] && is_ip_address "${CONFIG[DOMAIN]}"; then
+        log_info "Detected IP address in --domain, automatically enabling --no-https"
         CONFIG[NO_HTTPS]="true"
         CONFIG[DOCKER_ENV_FILE]="env.local"
     fi

@@ -38,7 +38,7 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 
 2. **Exécuter le script d'installation et suivre les instructions** :
    ```bash
-   ./setup.sh --ctfd-url <domaine.com>
+   ./setup.sh --domain <domaine.com>
    ```
 
 3. **Accéder à l'URL du serveur configuré**
@@ -50,7 +50,7 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 
 | Option                   | Description                                                             | Requis   |
 |--------------------------|-------------------------------------------------------------------------|----------|
-| `--ctfd-url URL/IP`      | URL/domaine de votre serveur CTFd                                       | ✅ Oui   |
+| `--domain URL/IP`      | URL/domaine de votre serveur CTFd                                       | ✅ Oui   |
 | `--working-folder DIR`   | Répertoire de travail (défaut : `/home/$USER`)                          | ❌ Non   |
 | `--theme DIR/URL`        | Permet l'utilisation d'un thème personnalisé                            | ❌ Non   |
 | `--backup-schedule TYPE` | Fréquence des sauvegardes de la base de données (`daily` (défaut), `hourly`, `10min`) | ❌ Non   |
@@ -61,25 +61,25 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 
 ```bash
 # Installation basique avec domaine
-./setup.sh --ctfd-url exemple.com
+./setup.sh --domain exemple.com
 
 # Installation basique avec une IP - utilise automatiquement l'option --no-https
-./setup.sh --ctfd-url 192.168.123.123
+./setup.sh --domain 192.168.123.123
 
 # Installation avec répertoire personnalisé
-./setup.sh --ctfd-url exemple.com --working-folder /opt/ctfd
+./setup.sh --domain exemple.com --working-folder /opt/ctfd
 
 # Installation avec thème personnalisé
-./setup.sh --ctfd-url exemple.com --theme /home/user/my-custom-theme
+./setup.sh --domain exemple.com --theme /home/user/my-custom-theme
 
 # Installation avec thème personnalisé téléchargé directement depuis github
-./setup.sh --ctfd-url exemple.com --theme https://github.com/user/theme.git
+./setup.sh --domain exemple.com --theme https://github.com/user/theme.git
 
 # Sauvegarde horaire
-./setup.sh --ctfd-url exemple.com --backup-schedule hourly
+./setup.sh --domain exemple.com --backup-schedule hourly
 
 # Sauvegarde toutes les 10 minutes
-./setup.sh --ctfd-url exemple.com --backup-schedule 10min
+./setup.sh --domain exemple.com --backup-schedule 10min
 
 # Afficher l'aide
 ./setup.sh --help

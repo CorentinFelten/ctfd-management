@@ -75,17 +75,17 @@ install_ctfd() {
     setup_env_key SECRET_KEY            "$secret_key"
     setup_env_key MARIADB_PASSWORD      "$db_password"
     setup_env_key MARIADB_ROOT_PASSWORD "$db_root_password"
-    setup_env_key BASE_DOMAIN           "${CONFIG[CTFD_URL]}"
+    setup_env_key BASE_DOMAIN           "${CONFIG[DOMAIN]}"
 
     # ── Build full URLs with scheme ──
     local scheme="https"
     [[ "${CONFIG[NO_HTTPS]:-}" == "true" ]] && scheme="http"
-    local ctfd_full_url="${scheme}://${CONFIG[CTFD_URL]}"
+    local ctfd_full_url="${scheme}://${CONFIG[DOMAIN]}"
 
     setup_env_key CTFD_URL              "$ctfd_full_url"
 
     # Instancer URL: use --instancer-url if provided, otherwise derive from local instancer
-    local instancer_url="${CONFIG[INSTANCER_URL]:-${scheme}://${CONFIG[CTFD_URL]}:8080}"
+    local instancer_url="${CONFIG[INSTANCER_URL]:-${scheme}://${CONFIG[DOMAIN]}:8080}"
     setup_env_key ZYNC_DEPLOYER_URL     "$instancer_url"
     setup_env_key ZYNC_JWT_SECRET       "$jwt_secret_key"
 
