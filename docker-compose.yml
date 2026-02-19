@@ -25,6 +25,8 @@ services:
       - ERROR_LOG=-
       - REVERSE_PROXY=true
       - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env}
+      - ZYNC_DEPLOYER_URL=${ZYNC_DEPLOYER_URL:?Set ZYNC_DEPLOYER_URL in .env}
+      - ZYNC_JWT_SECRET=${ZYNC_JWT_SECRET:?Set ZYNC_JWT_SECRET in .env}
     volumes:
       - ${DATA_DIR:-../data}/CTFd/logs:/var/log/CTFd
       - ${DATA_DIR:-../data}/CTFd/uploads:/var/uploads

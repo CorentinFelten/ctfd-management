@@ -119,15 +119,48 @@ initialize_ctfd_config() {
     # Allow Ctrl+C to cancel interactive input
     trap 'echo >&2; error_exit "Configuration aborted by user"' INT
     
-    echo >&2
-    read -rp "Enter CTFd instance URL (e.g., https://ctf.example.com): " url || {
-        echo >&2
-        error_exit "Configuration aborted by user"
-    }
+    # Auto-detect CTFd URL from the .env file produced by setup.sh
+    local env_file="${CONFIG[WORKING_DIR]}/infra/.env"
+    local base_domain="" enable_tls=""
     
-    if [[ ! "$url" =~ ^https?:// ]]; then
-        trap - INT
-        error_exit "Invalid URL format. Must start with http:// or https://"
+    if [[ -f "$env_file" ]]; then
+        base_domain="$(read_env_value "BASE_DOMAIN" "$env_file")"
+        enable_tls="$(read_env_value "ENABLE_TLS" "$env_file")"
+    fi
+    
+    if [[ -n "$base_domain" ]]; then
+        local scheme="https"
+        [[ "${enable_tls,,}" == "false" ]] && scheme="http"
+        local detected_url="${scheme}://${base_domain}"
+        
+        echo >&2
+        read -rp "Connect to ${detected_url} ? [Y/n] " confirm || {
+            echo >&2
+            error_exit "Configuration aborted by user"
+        }
+        
+        if [[ -z "$confirm" || "${confirm,,}" == "y" || "${confirm,,}" == "yes" ]]; then
+            url="$detected_url"
+        else
+            read -rp "Enter CTFd instance URL: " url || {
+                echo >&2
+                error_exit "Configuration aborted by user"
+            }
+            if [[ ! "$url" =~ ^https?:// ]]; then
+                trap - INT
+                error_exit "Invalid URL format. Must start with http:// or https://"
+            fi
+        fi
+    else
+        echo >&2
+        read -rp "Enter CTFd instance URL (e.g., https://ctf.example.com): " url || {
+            echo >&2
+            error_exit "Configuration aborted by user"
+        }
+        if [[ ! "$url" =~ ^https?:// ]]; then
+            trap - INT
+            error_exit "Invalid URL format. Must start with http:// or https://"
+        fi
     fi
     
     read -rp "Enter CTFd Admin Access Token: " token || {

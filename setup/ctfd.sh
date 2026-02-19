@@ -77,6 +77,18 @@ install_ctfd() {
     setup_env_key MARIADB_ROOT_PASSWORD "$db_root_password"
     setup_env_key BASE_DOMAIN           "${CONFIG[CTFD_URL]}"
 
+    # ── Build full URLs with scheme ──
+    local scheme="https"
+    [[ "${CONFIG[NO_HTTPS]:-}" == "true" ]] && scheme="http"
+    local ctfd_full_url="${scheme}://${CONFIG[CTFD_URL]}"
+
+    setup_env_key CTFD_URL              "$ctfd_full_url"
+
+    # Instancer URL: use --instancer-url if provided, otherwise derive from local instancer
+    local instancer_url="${CONFIG[INSTANCER_URL]:-${scheme}://${CONFIG[CTFD_URL]}:8080}"
+    setup_env_key ZYNC_DEPLOYER_URL     "$instancer_url"
+    setup_env_key ZYNC_JWT_SECRET       "$jwt_secret_key"
+
     # ── Traefik config selection ──
     if [[ "${CONFIG[NO_HTTPS]:-}" == "true" ]]; then
         log_info "HTTPS disabled — using local Traefik config (HTTP only)"
