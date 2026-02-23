@@ -25,7 +25,7 @@ ctfd_add_flags() {
             # Simple string flag
             flag_data="$(jq -n \
                 --argjson chal_id "$challenge_id" \
-                --arg content "$flag_entry" \
+                --argjson content "$flag_entry" \
                 '{challenge_id: $chal_id, content: $content, type: "static"}'
             )"
         else
@@ -104,7 +104,7 @@ ctfd_add_hints() {
         local hint_content hint_cost
 
         if echo "$hint_entry" | jq -e 'type == "string"' >/dev/null 2>&1; then
-            hint_content="$hint_entry"
+            hint_content="$(echo "$hint_entry" | jq -r '.')"
             hint_cost="0"
         else
             hint_content="$(echo "$hint_entry" | jq -r '.content // .hint')"
