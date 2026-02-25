@@ -314,4 +314,8 @@ The setup script automatically generates:
 - **Database password** (16 characters)
 - **Database root password** (16 characters)
 
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
 These scripts were initially developed for the PolyCyber team to automate the installation and management of CTFd servers. They were built to work specifically with the [Galvanize](https://github.com/28Pollux28/galvanize) instancer and [Zync](https://github.com/28Pollux28/zync) plugin. 
