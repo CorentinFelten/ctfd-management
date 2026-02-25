@@ -46,6 +46,13 @@ entryPoints:
         options: "securetls@file"
         certResolver: letsencrypt
 
+  instancer:
+    address: ":8080"
+    http:
+      tls:
+        options: "securetls@file"
+        certResolver: letsencrypt
+
 # ──────────────────────────────────────────────
 # Certificate Resolvers
 # ──────────────────────────────────────────────

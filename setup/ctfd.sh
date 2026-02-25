@@ -89,13 +89,44 @@ install_ctfd() {
     setup_env_key ZYNC_DEPLOYER_URL     "$instancer_url"
     setup_env_key ZYNC_JWT_SECRET       "$jwt_secret_key"
 
-    # ── Traefik config selection ──
+    # ── Traefik config selection + CA auto-switch ──
+    local traefik_cfg="$infra_dir/traefik-config/traefik.yml"
+    local staging_ca="https://acme-staging-v02.api.letsencrypt.org/directory"
+    local production_ca="https://acme-v02.api.letsencrypt.org/directory"
+
     if [[ "${CONFIG[NO_HTTPS]:-}" == "true" ]]; then
         log_info "HTTPS disabled — using local Traefik config (HTTP only)"
         setup_env_key TRAEFIK_STATIC_CONFIG "./traefik-config/traefik-local.yml"
+
+        # Local deployment: switch to staging CA to avoid burning Let's Encrypt rate limits
+        if ! grep -qE "^[[:space:]]*caServer:.*acme-staging-v02" "$traefik_cfg" 2>/dev/null; then
+            log_info "Switching Traefik to Let's Encrypt staging CA for local deployment..."
+            if grep -qE "^[[:space:]]*caServer:" "$traefik_cfg" 2>/dev/null; then
+                sed -i "s|caServer:.*|caServer: \"${staging_ca}\"|" "$traefik_cfg"
+            else
+                sed -i "/storage:.*acme\.json/a\\      caServer: \"${staging_ca}\"" "$traefik_cfg"
+            fi
+            log_success "caServer set to staging: $staging_ca"
+        else
+            log_success "TLS CA verified: staging Let's Encrypt endpoint confirmed (local deployment)"
+        fi
     else
         log_info "HTTPS enabled — using production Traefik config"
         setup_env_key TRAEFIK_STATIC_CONFIG "./traefik-config/traefik.yml"
+
+        # Production deployment: ensure production CA is set
+        if grep -qE "^[[:space:]]*caServer:.*acme-staging-v02" "$traefik_cfg" 2>/dev/null; then
+            log_warning "Staging CA detected — switching to production automatically..."
+            sed -i "s|caServer:.*acme-staging-v02\.api\.letsencrypt\.org.*|caServer: \"${production_ca}\"|" "$traefik_cfg"
+            log_success "caServer updated to production: $production_ca"
+
+        elif ! grep -qE "^[[:space:]]*caServer:" "$traefik_cfg" 2>/dev/null; then
+            log_info "caServer not set — adding production CA explicitly..."
+            sed -i "/storage:.*acme\.json/a\\      caServer: \"${production_ca}\"" "$traefik_cfg"
+            log_success "caServer set to production: $production_ca"
+        else
+            log_success "TLS CA verified: production Let's Encrypt endpoint confirmed"
+        fi
     fi
 
     # ── Ensure Let's Encrypt storage directory exists ──

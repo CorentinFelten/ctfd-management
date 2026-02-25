@@ -32,3 +32,6 @@ entryPoints:
   web:
     address: ":80"
     asDefault: true
+
+  instancer:
+    address: ":8080"

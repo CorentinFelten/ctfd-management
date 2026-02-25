@@ -57,6 +57,7 @@ services:
     ports:
       - "80:80"
       - "${HTTPS_PORT:-443}:443"
+      - "8080:8080"
     volumes:
       # Static config — swap traefik-local.yml for local/IP deployments
       - ${TRAEFIK_STATIC_CONFIG:-./traefik-config/traefik.yml}:/etc/traefik/traefik.yml:ro
@@ -114,8 +115,13 @@ services:
     container_name: galvanize-instancer
     stop_grace_period: 1m
     stop_signal: SIGINT
-    ports:
-      - "8080:8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=infra_proxy"
+      - "traefik.http.routers.instancer.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.instancer.entrypoints=instancer"
+      - "traefik.http.routers.instancer.middlewares=security-headers@file"
+      - "traefik.http.services.instancer.loadbalancer.server.port=8080"
     environment:
       - "DEVELOPMENT=${DEVELOPMENT:-false}"
     entrypoint:
