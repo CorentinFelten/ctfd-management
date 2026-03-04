@@ -21,6 +21,7 @@ create_and_set_owner() {
     # CTFd runs as UID 1001 inside the container
     chown -R 1001:1001 "$working_dir/data/CTFd/uploads"
     chown -R 1001:1001 "$working_dir/data/CTFd/logs"
+    chmod -R o+w "$working_dir/data/galvanize"
 
     log_success "Directories created and ownership set"
 }
