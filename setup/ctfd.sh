@@ -15,14 +15,11 @@ install_ctfd() {
     local plugin_path="$working_dir/$plugin_name"
     local compose_file="$infra_dir/docker-compose.yml"
 
-    # ── Resolve compose project name for network references ──
-    local compose_project_name
-    compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${infra_dir}/.env" 2>/dev/null \
-        | head -n1 | cut -d= -f2- | tr -d "'\"\r")"
-    if [[ -z "$compose_project_name" ]]; then
-        compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${infra_dir}/${CONFIG[DOCKER_ENV_FILE]}" 2>/dev/null \
-            | head -n1 | cut -d= -f2- | tr -d "'\"\r")"
-    fi
+    setup_env_key COMPOSE_PROJECT_NAME "${COMPOSE_PROJECT_NAME:-ctfd_infra}"
+
+    local compose_project_name=""
+    compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${infra_dir}/.env" \
+        | head -n1 | cut -d= -f2- | tr -d "'\"\r" || true)"
     compose_project_name="${compose_project_name:-ctfd_infra}"
     local docker_proxy_network="${compose_project_name}_proxy"
 
