@@ -66,7 +66,7 @@ setup_ansible_user() {
 
     chmod 644 "$public_key_path"
     chown "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" \
-        "$ssh_key_dir" "$private_key_path" "$public_key_path"
+        "$ssh_key_dir" "$public_key_path"
 
     log_success "Ansible user setup complete!"
     log_info "SSH private key: $private_key_path"

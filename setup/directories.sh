@@ -22,6 +22,7 @@ create_and_set_owner() {
     chown -R 1001:1001 "$working_dir/data/CTFd/uploads"
     chown -R 1001:1001 "$working_dir/data/CTFd/logs"
     chmod -R o+w "$working_dir/data/galvanize"
+    chown -R 1000:1000 "$working_dir/data/galvanize"
 
     log_success "Directories created and ownership set"
 }
