@@ -11,6 +11,7 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/env.sh"
+source "$SCRIPT_DIR/lib/dns.sh"
 
 # ── Source setup modules ─────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ declare -A CONFIG=(
     [BACKUP_SCHEDULE]="daily"
     [JWT_SECRET_KEY]=""
     [DOCKER_ENV_FILE]="env.production"
+    [DNS_PROVIDER]="cloudflare"
 )
 
 # ── Usage ────────────────────────────────────────────────────────────────────
@@ -46,6 +48,10 @@ Options:
     --theme PATH_OR_URL     Path to local theme folder or Git URL to clone
     --backup-schedule TYPE  Set backup schedule: daily, hourly, or 10min (default: daily)
     --instancer-url URL     Set instancer URL (default: local instancer)
+    --dns-provider NAME     DNS provider for wildcard TLS certs (default: cloudflare)
+                            Supported: cloudflare, route53, digitalocean, hetzner,
+                            ovh, gandiv5, gcloud, godaddy, namecheap, ionos
+                            Or any lego provider (https://go-acme.github.io/lego/dns/)
     --no-https              Disable HTTPS configuration for CTFd
                             (automatically enabled for IP addresses)
     --help                  Show this help message
@@ -57,6 +63,7 @@ Directory structure (created under <working-folder>/<this-repo-folder>/):
 
 Examples:
     $SCRIPT_NAME --domain example.com
+    $SCRIPT_NAME --domain example.com --dns-provider cloudflare
     $SCRIPT_NAME --domain 192.168.1.100
     $SCRIPT_NAME --domain example.com --working-folder /opt/ctfd
     $SCRIPT_NAME --domain example.com --theme /home/user/my-custom-theme
@@ -89,6 +96,9 @@ parse_arguments() {
             --instancer-url)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --instancer-url"
                 CONFIG[INSTANCER_URL]="$2"; shift 2 ;;
+            --dns-provider)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --dns-provider"
+                CONFIG[DNS_PROVIDER]="$2"; shift 2 ;;
             --no-https)
                 CONFIG[NO_HTTPS]="true"
                 CONFIG[DOCKER_ENV_FILE]="env.local"
@@ -120,6 +130,11 @@ main() {
     update_system
     install_docker
     create_and_set_owner
+
+    if [[ "${CONFIG[NO_HTTPS]:-}" != "true" ]]; then
+        dns_setup_wizard
+    fi
+
     install_ctfd
 
     setup_backup_script

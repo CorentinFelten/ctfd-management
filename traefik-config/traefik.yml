@@ -45,6 +45,10 @@ entryPoints:
       tls:
         options: "securetls@file"
         certResolver: letsencrypt
+        domains:
+          - main: "__BASE_DOMAIN__"
+            sans:
+              - "*.__BASE_DOMAIN__"
 
   instancer:
     address: ":8080"
@@ -61,7 +65,12 @@ certificatesResolvers:
   letsencrypt:
     acme:
       email: admin@polycyber.io
-      tlsChallenge: {}
+      # Set DNS_PROVIDER and its credentials in .env (see README).
+      dnsChallenge:
+        provider: "__DNS_PROVIDER__"
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
       storage: /etc/traefik/letsencrypt/acme.json
       # ⚠ STAGING — switch to production before going live:
       #   https://acme-v02.api.letsencrypt.org/directory
