@@ -47,6 +47,7 @@ setup_ansible_user() {
     if [[ ! -f "$private_key_path" || ! -f "$public_key_path" ]]; then
         error_exit "Failed to generate SSH keys"
     fi
+    chown 1000:1000 "$private_key_path"
     log_success "SSH key pair generated"
 
     local authorized_keys="$ansible_ssh_dir/authorized_keys"
@@ -80,12 +81,19 @@ configure_instancer() {
     local working_dir="${CONFIG[WORKING_DIR]}"
     local config_path="$working_dir/data/galvanize/config.yaml"
 
+    # Resolve the actual Docker network name: <project_name>_proxy
+    local compose_project_name
+    compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${SCRIPT_DIR}/.env" 2>/dev/null \
+        | head -n1 | cut -d= -f2- | tr -d "'\"\r")"
+    compose_project_name="${compose_project_name:-ctfd_infra}"
+    local docker_proxy_network="${compose_project_name}_proxy"
+
     sed -i "s|your-secret-key-here|${CONFIG[JWT_SECRET_KEY]}|g"          "$config_path" # Setting up JWT
     sed -i "s|your-ssh-user|$ANSIBLE_USER|g"                             "$config_path" # Setting up Ansible user
     sed -i "s|your-server-ip,|${CONFIG[DOMAIN]},|g"                    "$config_path" # Setting up server IP / base domain
     sed -i "s|challs.example.com|${CONFIG[DOMAIN]}|g"                  "$config_path" # Setting up public hostname of the deployer 
     sed -i "s|localhost:6379|redis:6379|g"                               "$config_path" # Setting up redis connection for instancer
-    sed -i 's|example_param: "example_value"|traefik_network: "proxy"|g' "$config_path" # Setting up traefik network
+    sed -i "s|example_param: \"example_value\"|traefik_network: \"${docker_proxy_network}\"|g" "$config_path" # Setting up traefik network
 
 
     log_success "Local instancer setup complete"

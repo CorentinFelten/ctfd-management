@@ -15,6 +15,17 @@ install_ctfd() {
     local plugin_path="$working_dir/$plugin_name"
     local compose_file="$infra_dir/docker-compose.yml"
 
+    # ── Resolve compose project name for network references ──
+    local compose_project_name
+    compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${infra_dir}/.env" 2>/dev/null \
+        | head -n1 | cut -d= -f2- | tr -d "'\"\r")"
+    if [[ -z "$compose_project_name" ]]; then
+        compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${infra_dir}/${CONFIG[DOCKER_ENV_FILE]}" 2>/dev/null \
+            | head -n1 | cut -d= -f2- | tr -d "'\"\r")"
+    fi
+    compose_project_name="${compose_project_name:-ctfd_infra}"
+    local docker_proxy_network="${compose_project_name}_proxy"
+
     local jwt_secret_key
     jwt_secret_key="$(generate_password 48)"
     CONFIG[JWT_SECRET_KEY]="$jwt_secret_key"
@@ -132,13 +143,23 @@ install_ctfd() {
     # ── Ensure Let's Encrypt storage directory exists ──
     mkdir -p "$infra_dir/traefik-config/letsencrypt"
 
+    # ── Patch Traefik static configs with the actual Docker network name ──
+    log_info "Setting Traefik Docker provider network to: $docker_proxy_network"
+    local traefik_file
+    for traefik_file in "$infra_dir/traefik-config/traefik.yml" "$infra_dir/traefik-config/traefik-local.yml"; do
+        if [[ -f "$traefik_file" ]]; then
+            sed -i "s|network:.*_proxy|network: ${docker_proxy_network}|" "$traefik_file"
+        fi
+    done
+    log_success "Traefik network configuration updated"
+
     # ── Build and pull Docker images ──
     log_info "Building CTFd docker image... This may take a while"
-    docker compose -f "$compose_file" build
+    docker compose -p "$compose_project_name" -f "$compose_file" build
     log_success "CTFd docker image successfully built"
 
     log_info "Pulling pre-built images (galvanize, traefik, mariadb, redis)..."
-    docker compose -f "$compose_file" pull -q
+    docker compose -p "$compose_project_name" -f "$compose_file" pull -q
     log_success "Docker images successfully pulled"
 
     # ── Custom theme ──
@@ -160,7 +181,7 @@ install_ctfd() {
 
     # ── Start containers ──
     log_info "Starting CTFd containers..."
-    docker compose -f "$compose_file" up -d
+    docker compose -p "$compose_project_name" -f "$compose_file" up -d
     log_success "CTFd containers started successfully"
     log_success "CTFd installation complete!"
 

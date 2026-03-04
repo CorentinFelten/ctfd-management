@@ -11,7 +11,7 @@ services:
       - "traefik.enable=true"
       # The static traefik.yml already handles HTTP→HTTPS redirect and default TLS.
       # Labels only need routing rule, middleware, and service port.
-      - "traefik.docker.network=infra_proxy"
+      - "traefik.docker.network=${COMPOSE_PROJECT_NAME:-ctfd_infra}_proxy"
       - "traefik.http.routers.ctfd.rule=Host(`${BASE_DOMAIN}`)"
       - "traefik.http.routers.ctfd.middlewares=security-headers@file"
       - "traefik.http.services.ctfd.loadbalancer.server.port=8000"
@@ -118,7 +118,7 @@ services:
     stop_signal: SIGINT
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=infra_proxy"
+      - "traefik.docker.network=${COMPOSE_PROJECT_NAME:-ctfd_infra}_proxy"
       - "traefik.http.routers.instancer.rule=PathPrefix(`/`)"
       - "traefik.http.routers.instancer.entrypoints=instancer"
       - "traefik.http.routers.instancer.middlewares=security-headers@file"
