@@ -54,7 +54,7 @@ install_ctfd() {
         mkdir -p "$working_dir/data/galvanize"
         cp "$instancer_tmp/galvanize/config.example.yaml" "$instancer_config_path"
         cp -a "$instancer_tmp/galvanize/data/." "$working_dir/data/galvanize"
-        chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$working_dir/data/galvanize"
+        chown -R 1000:1000 "$working_dir/data/galvanize"
 
         # Repo is no longer needed — image is pulled from ghcr.io
         rm -rf "$instancer_tmp"
