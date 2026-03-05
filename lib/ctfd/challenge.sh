@@ -134,10 +134,10 @@ ctfd_install_challenge() {
     log_debug "Challenge created with ID: $challenge_id"
 
     # Attach resources
-    ctfd_add_flags             "$challenge_data" "$challenge_id" "$challenge_path" || return 1
+    ctfd_add_flags              "$challenge_data" "$challenge_id" "$challenge_path" || return 1
     ctfd_upload_challenge_files "$challenge_data" "$challenge_id" "$challenge_path" || return 1
-    ctfd_add_hints             "$challenge_data" "$challenge_id"                    || return 1
-    ctfd_add_tags              "$challenge_data" "$challenge_id"                    || return 1
+    ctfd_add_hints              "$challenge_data" "$challenge_id"                   || return 1
+    ctfd_add_tags               "$challenge_data" "$challenge_id"                   || return 1
 
     return 0
 }
@@ -163,11 +163,11 @@ ctfd_sync_challenge() {
 
     local challenge_id
     challenge_id="$(ctfd_get_challenge_id_by_name "$name")" || {
-        log_error "Challenge '$name' not found in CTFd"
+        log_error "Challenge '$name' not found in CTFd — use ingest to create it first"
         return 1
     }
     [[ -n "$challenge_id" && "$challenge_id" != "null" ]] || {
-        log_error "Challenge '$name' not found in CTFd"
+        log_error "Challenge '$name' not found in CTFd — use ingest to create it first"
         return 1
     }
 
@@ -183,9 +183,10 @@ ctfd_sync_challenge() {
         return 1
     }
 
-    # Note: full sync (re-adding flags/files/hints/tags) would require deleting
-    # existing resources first. For now we only update core properties, matching
-    # the behaviour of basic ctfcli sync.
-
+    log_debug "Refreshing files for: $name"
+    ctfd_delete_challenge_files "$challenge_id" || \
+        log_warning "Could not cleanly delete existing files for: $name (proceeding anyway)"
+    ctfd_upload_challenge_files "$challenge_data" "$challenge_id" "$challenge_path" || \
+        log_warning "Some files failed to re-upload for: $name"
     return 0
 }
