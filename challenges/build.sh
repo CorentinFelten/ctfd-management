@@ -5,6 +5,129 @@
 [[ -n "${_CHALL_BUILD_LOADED:-}" ]] && return 0
 readonly _CHALL_BUILD_LOADED=1
 
+# ── Build one docker-compose.yml (sequential / verbose) ─────────────────────
+
+_compose_single() {
+    local compose_file="$1"
+    local compose_dir
+    compose_dir="$(dirname "$compose_file")"
+
+    log_info "Building Compose stack: $compose_file"
+
+    if [[ "${CONFIG[DRY_RUN]}" == "false" ]]; then
+        local -a build_args=()
+        [[ "${CONFIG[FORCE]}" == "true" ]] && build_args+=(--no-cache)
+
+        (cd "$compose_dir" && docker compose build "${build_args[@]}") || {
+            log_error "Failed to build compose stack: $compose_file"
+            return 1
+        }
+        log_success "Built compose stack: $compose_file"
+    else
+        log_info "Would build: docker compose build (in $compose_dir)"
+    fi
+}
+
+# ── Build one docker-compose.yml (parallel / quiet, writes status file) ─────
+
+_compose_single_quiet() {
+    local compose_file="$1" status_file="$2"
+    local compose_dir
+    compose_dir="$(dirname "$compose_file")"
+
+    local -a build_args=()
+    [[ "${CONFIG[FORCE]}" == "true" ]] && build_args+=(--no-cache)
+
+    local build_log
+    build_log="$(mktemp "/tmp/ctf_compose_$(basename "$compose_dir")_XXXXXX.log")"
+
+    if (cd "$compose_dir" && docker compose build "${build_args[@]}" >> "$build_log" 2>&1); then
+        rm -f "$build_log"
+        echo "SUCCESS:${compose_file}" > "$status_file"
+    else
+        echo "FAIL:${compose_file}" > "$status_file"
+        log_error "Compose build failed for $compose_file. See: $build_log"
+        return 1
+    fi
+}
+
+# ── Build all docker-compose.yml files found under the challenge path ────────
+
+build_compose_stacks() {
+    local total=0 ok=0 fail=0
+    local -a failed_names=() compose_files=()
+
+    log_info "Discovering docker-compose.yml files..."
+
+    local category challenge compose_file
+    for category in "${CONFIG[CHALLENGE_PATH]}"/*; do
+        [[ -d "$category" ]] || continue
+        for challenge in "$category"/*; do
+            [[ -d "$challenge" ]] || continue
+            should_process_challenge "$category" "$challenge" || continue
+
+            for compose_file in "$challenge"/docker-compose.yml "$challenge"/docker-compose.yaml; do
+                [[ -f "$compose_file" ]] || continue
+                compose_files+=("$compose_file")
+                ((++total))
+            done
+        done
+    done
+
+    log_info "Found $total docker-compose stack(s) to build"
+    [[ $total -eq 0 ]] && { log_info "No docker-compose stacks to build"; return 0; }
+
+    local current=0
+    local max_par="${CONFIG[PARALLEL_BUILDS]}"
+
+    if [[ "${CONFIG[DRY_RUN]}" == "false" && $max_par -gt 1 ]]; then
+        # ── Parallel ──
+        local -a pids=() status_files=()
+
+        for compose_file in "${compose_files[@]}"; do
+            ((++current))
+            log_info "[$current/$total] Starting compose build for $(dirname "$compose_file" | xargs basename)"
+
+            local sf
+            sf="$(mktemp "/tmp/ctf_status_compose_$(basename "$(dirname "$compose_file")")_XXXXXX.txt")"
+            _compose_single_quiet "$compose_file" "$sf" &
+            pids+=($!)
+            status_files+=("$sf")
+
+            if [[ ${#pids[@]} -ge $max_par ]]; then
+                _drain_parallel_batch pids status_files ok fail failed_names
+            fi
+        done
+        _drain_parallel_batch pids status_files ok fail failed_names
+    else
+        # ── Sequential ──
+        for compose_file in "${compose_files[@]}"; do
+            ((++current))
+            log_info "[$current/$total] Starting compose build for $(dirname "$compose_file" | xargs basename)"
+
+            if _compose_single "$compose_file"; then
+                ((++ok))
+            else
+                failed_names+=("$compose_file")
+                ((++fail))
+            fi
+        done
+    fi
+
+    # Summary
+    log_info  "Compose build summary:"
+    log_success "Successfully built: $ok/$total stack(s)"
+    if [[ $fail -gt 0 ]]; then
+        log_warning "Failed to build: $fail/$total stack(s)"
+        [[ ${#failed_names[@]} -gt 0 ]] && {
+            log_warning "Failed stacks:"
+            printf '  - %s\n' "${failed_names[@]}" >&2
+        }
+    fi
+
+    [[ $fail -eq 0 ]]
+}
+
 # ── Build one challenge (sequential / verbose) ──────────────────────────────
 
 _build_single() {
@@ -21,6 +144,13 @@ _build_single() {
     challenge_type="$(get_challenge_info "$challenge_yml" "type")"
     [[ "$challenge_type" == "zync" ]] || {
         log_debug "Skipping non-docker challenge: $challenge_name (type: ${challenge_type:-unknown})"
+        return 0
+    }
+
+    local playbook_name
+    playbook_name="$(get_challenge_info "$challenge_yml" "playbook_name")"
+    [[ "$playbook_name" == "custom_compose" ]] && {
+        log_debug "Skipping single-image build for $challenge_name (playbook_name: custom_compose)"
         return 0
     }
 
@@ -66,6 +196,12 @@ _build_single_quiet() {
     local challenge_type
     challenge_type="$(get_challenge_info "$challenge_yml" "type")"
     if [[ "$challenge_type" != "zync" ]]; then
+        echo "SKIP:${challenge_name}" > "$status_file"; return 0
+    fi
+
+    local playbook_name
+    playbook_name="$(get_challenge_info "$challenge_yml" "playbook_name")"
+    if [[ "$playbook_name" == "custom_compose" ]]; then
         echo "SKIP:${challenge_name}" > "$status_file"; return 0
     fi
 
@@ -150,8 +286,12 @@ build_challenges() {
                 local ctype
                 ctype="$(get_challenge_info "$yml" "type")"
                 if [[ "$ctype" == "zync" ]]; then
-                    to_build+=("$category:$challenge")
-                    ((++total))
+                    local cplaybook
+                    cplaybook="$(get_challenge_info "$yml" "playbook_name")"
+                    if [[ "$cplaybook" != "custom_compose" ]]; then
+                        to_build+=("$category:$challenge")
+                        ((++total))
+                    fi
                 fi
             fi
         done
@@ -212,5 +352,13 @@ build_challenges() {
         }
     fi
 
-    [[ $fail -eq 0 ]]
+    local images_ok
+    [[ $fail -eq 0 ]] && images_ok=true || images_ok=false
+
+    # ── Step 2: build every docker-compose.yml found across challenges ──────
+    log_info "---"
+    local compose_ok=true
+    build_compose_stacks || compose_ok=false
+
+    [[ "$images_ok" == "true" && "$compose_ok" == "true" ]]
 }
