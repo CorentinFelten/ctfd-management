@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib/ctfd/resources.sh — Attach flags, files, hints, and tags to a challenge.
+# lib/ctfd/resources.sh — Attach flags, files, hints, tags, topics, and requirements to a challenge.
 # Requires: lib/common.sh, lib/ctfd/api.sh
 
 [[ -n "${_LIB_CTFD_RESOURCES_LOADED:-}" ]] && return 0
@@ -154,4 +154,87 @@ ctfd_add_tags() {
         }
         log_debug "Added tag: $tag"
     done < <(echo "$challenge_data" | jq -r '.tags // [] | .[]')
+}
+
+# ── Topics ───────────────────────────────────────────────────────────────────
+
+ctfd_add_topics() {
+    local challenge_data="$1" challenge_id="$2"
+
+    local topics_json
+    topics_json="$(echo "$challenge_data" | jq -c '.topics // []')"
+    [[ "$topics_json" == "[]" || "$topics_json" == "null" ]] && return 0
+
+    log_debug "Adding topics..."
+
+    while IFS= read -r topic; do
+        [[ -z "$topic" || "$topic" == "null" ]] && continue
+
+        local topic_data
+        topic_data="$(jq -n \
+            --argjson chal_id "$challenge_id" \
+            --arg value "$topic" \
+            '{challenge_id: $chal_id, value: $value, type: "challenge"}'
+        )"
+
+        ctfd_api_call POST "/api/v1/topics" "$topic_data" >/dev/null || {
+            log_warning "Failed to add topic: $topic"
+            return 1
+        }
+        log_debug "Added topic: $topic"
+    done < <(echo "$challenge_data" | jq -r '.topics // [] | .[]')
+}
+
+# ── Requirements ─────────────────────────────────────────────────────────────
+
+ctfd_add_requirements() {
+    local challenge_data="$1" challenge_id="$2"
+
+    local requirements_json
+    requirements_json="$(echo "$challenge_data" | jq -c '.requirements // []')"
+    [[ "$requirements_json" == "[]" || "$requirements_json" == "null" ]] && return 0
+
+    log_debug "Resolving requirements..."
+
+    local -a prereq_ids=()
+
+    while IFS= read -r req_entry; do
+        [[ -z "$req_entry" || "$req_entry" == "null" ]] && continue
+
+        if echo "$req_entry" | jq -e 'type == "number"' >/dev/null 2>&1; then
+            # Already a numeric ID
+            prereq_ids+=("$(echo "$req_entry" | jq -r '.')")
+        else
+            # String name → resolve to ID
+            local req_name resolved_id
+            req_name="$(echo "$req_entry" | jq -r '.')"
+            resolved_id="$(ctfd_get_challenge_id_by_name "$req_name" 2>/dev/null || true)"
+
+            if [[ -n "$resolved_id" && "$resolved_id" != "null" ]]; then
+                prereq_ids+=("$resolved_id")
+                log_debug "Resolved requirement '$req_name' → ID $resolved_id"
+            else
+                log_warning "Could not resolve requirement by name: '$req_name' — skipping"
+            fi
+        fi
+    done < <(echo "$challenge_data" | jq -c '.requirements // [] | .[]')
+
+    [[ ${#prereq_ids[@]} -eq 0 ]] && return 0
+
+    local prereqs_array
+    prereqs_array="$(printf '%s\n' "${prereq_ids[@]}" | jq -R 'tonumber' | jq -sc '.')"
+
+    local req_payload
+    req_payload="$(jq -n \
+        --argjson prereqs "$prereqs_array" \
+        '{requirements: {prerequisites: $prereqs}}'
+    )"
+
+    log_debug "Setting requirements on challenge ID $challenge_id: $prereqs_array"
+
+    ctfd_api_call PATCH "/api/v1/challenges/$challenge_id" "$req_payload" >/dev/null || {
+        log_warning "Failed to set requirements for challenge ID $challenge_id"
+        return 1
+    }
+    log_debug "Requirements set"
 }

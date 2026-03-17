@@ -74,6 +74,15 @@ _ctfd_build_challenge_payload() {
         )"
     fi
 
+    # Extra properties — merge any key/value pairs under `extra` directly into
+    # the payload, allowing challenge authors to pass through arbitrary CTFd
+    # plugin fields without modifying this script.
+    local extra_json
+    extra_json="$(echo "$challenge_data" | jq -c '.extra // empty')"
+    if [[ -n "$extra_json" && "$extra_json" != "null" ]]; then
+        api_data="$(echo "$api_data" | jq --argjson extra "$extra_json" '. + $extra')"
+    fi
+
     echo "$api_data"
 }
 
@@ -134,10 +143,12 @@ ctfd_install_challenge() {
     log_debug "Challenge created with ID: $challenge_id"
 
     # Attach resources
-    ctfd_add_flags             "$challenge_data" "$challenge_id" "$challenge_path" || return 1
+    ctfd_add_flags              "$challenge_data" "$challenge_id" "$challenge_path" || return 1
     ctfd_upload_challenge_files "$challenge_data" "$challenge_id" "$challenge_path" || return 1
-    ctfd_add_hints             "$challenge_data" "$challenge_id"                    || return 1
-    ctfd_add_tags              "$challenge_data" "$challenge_id"                    || return 1
+    ctfd_add_hints              "$challenge_data" "$challenge_id"                   || return 1
+    ctfd_add_tags               "$challenge_data" "$challenge_id"                   || return 1
+    ctfd_add_topics             "$challenge_data" "$challenge_id"                   || return 1
+    ctfd_add_requirements       "$challenge_data" "$challenge_id"                   || return 1
 
     return 0
 }
@@ -183,9 +194,9 @@ ctfd_sync_challenge() {
         return 1
     }
 
-    # Note: full sync (re-adding flags/files/hints/tags) would require deleting
-    # existing resources first. For now we only update core properties, matching
-    # the behaviour of basic ctfcli sync.
+    # Note: full sync (re-adding flags/files/hints/tags/topics/requirements) would
+    # require deleting existing resources first. For now we only update core
+    # properties, matching the behaviour of basic ctfcli sync.
 
     return 0
 }
