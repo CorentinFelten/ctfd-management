@@ -54,6 +54,8 @@ services:
     security_opt:
       - no-new-privileges:true
     read_only: true
+    env_file:
+      - .env
     ports:
       - "80:80"
       - "${HTTPS_PORT:-443}:443"

@@ -16,6 +16,7 @@ readonly VERSION="2.0.0"
 
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/env.sh"
+source "$SCRIPT_DIR/lib/repo.sh"
 source "$SCRIPT_DIR/lib/challenges.sh"
 source "$SCRIPT_DIR/lib/ctfd/config.sh"
 source "$SCRIPT_DIR/lib/ctfd/api.sh"
@@ -38,6 +39,7 @@ declare -A CONFIG=(
     [DRY_RUN]="false"
     [WORKING_DIR]="/home/${SUDO_USER:-$USER}"
     [CTF_REPO]=""
+    [CTF_REPO_PATH]=""
     [ACTION]="all"
     [CATEGORIES]=""
     [CHALLENGES]=""
@@ -46,6 +48,7 @@ declare -A CONFIG=(
     [DEBUG]="false"
     [SKIP_DOCKER_CHECK]="false"
     [CONFIG_FILE]=""
+    [GIT_BRANCH]=""
 )
 
 # ── Usage & Version ──────────────────────────────────────────────────────────
@@ -61,7 +64,14 @@ ACTIONS:
 
 MAIN OPTIONS:
     --working-folder DIR    Set working directory (default: /home/\$USER)
-    --ctf-repo REPO         Set the CTF challenge repository name (mandatory)
+    --ctf-repo REPO         Challenge repository — resolved in this priority order:
+                              1. Folder name inside --working-folder (e.g. "MyCTF-Challenges")
+                              2. Folder name inside <working-folder>/data/galvanize/challenges/
+                              3. Git URL — cloned to --working-folder, or to
+                                 <working-folder>/data/galvanize/challenges/ when galvanize
+                                 is configured there (detected automatically)
+                              4. Absolute or relative path to any existing folder
+    --git-branch BRANCH     Git branch/tag to checkout after cloning (optional)
     --config FILE           Load configuration from file
 
 FILTERING OPTIONS:
@@ -80,17 +90,32 @@ DEBUGGING:
     --version               Show version information
 
 EXAMPLES:
-  $SCRIPT_NAME --ctf-repo PolyPwnCTF-2025-Challenges
-  $SCRIPT_NAME --action build --ctf-repo PolyPwnCTF-2025-Challenges --categories "web,crypto"
-  $SCRIPT_NAME --action ingest --ctf-repo PolyPwnCTF-2025-Challenges
-  $SCRIPT_NAME --action sync --ctf-repo PolyPwnCTF-2025-Challenges --force
-  $SCRIPT_NAME --ctf-repo PolyPwnCTF-2025-Challenges --dry-run
+  # Folder already present in working dir
+  $SCRIPT_NAME --ctf-repo CTF_Repo
+
+  # Folder in data/galvanize/challenges/
+  $SCRIPT_NAME --ctf-repo CTF_Repo
+
+  # Git URL — auto-detect clone target
+  $SCRIPT_NAME --ctf-repo https://github.com/org/CTF_Repo.git
+
+  # Git URL with specific branch
+  $SCRIPT_NAME --ctf-repo git@github.com:org/challenges.git --git-branch main
+
+  # Absolute path
+  $SCRIPT_NAME --ctf-repo /srv/ctf/challenges
+
+  $SCRIPT_NAME --action build --ctf-repo CTF_Repo --categories "web,crypto"
+  $SCRIPT_NAME --action ingest --ctf-repo CTF_Repo
+  $SCRIPT_NAME --action sync --ctf-repo CTF_Repo --force
+  $SCRIPT_NAME --ctf-repo CTF_Repo --dry-run
 
 CONFIG FILE FORMAT:
   Create a .env file with KEY=VALUE pairs:
-    CTF_REPO=PolyPwnCTF-2025-Challenges
+    CTF_REPO=CTF_Repo
     WORKING_DIR=/opt/ctf
     PARALLEL_BUILDS=8
+    GIT_BRANCH=main
 EOF
 }
 
@@ -110,6 +135,9 @@ parse_arguments() {
             --ctf-repo)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --ctf-repo"
                 CONFIG[CTF_REPO]="$2"; shift 2 ;;
+            --git-branch)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --git-branch"
+                CONFIG[GIT_BRANCH]="$2"; shift 2 ;;
             --action)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --action"
                 case "$2" in
@@ -143,14 +171,7 @@ parse_arguments() {
     [[ -n "${CONFIG[CONFIG_FILE]}" ]] && load_config_file "${CONFIG[CONFIG_FILE]}"
     [[ -n "${CONFIG[CTF_REPO]}" ]]   || error_exit "Error: --ctf-repo is mandatory and must be specified."
 
-    local repo_path
-    if [[ "${CONFIG[CTF_REPO]}" == /* ]]; then
-        repo_path="${CONFIG[CTF_REPO]}"
-    else
-        repo_path="${CONFIG[WORKING_DIR]}/${CONFIG[CTF_REPO]}"
-    fi
-    CONFIG[CTF_REPO_PATH]="$repo_path"
-    [[ -d "$repo_path" ]] || error_exit "Error: Couldn't find local challenges repository $repo_path."
+    resolve_ctf_repo_path
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────

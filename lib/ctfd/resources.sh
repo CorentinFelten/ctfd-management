@@ -55,6 +55,34 @@ ctfd_add_flags() {
 }
 
 # ── File uploads ─────────────────────────────────────────────────────────────
+_resolve_challenge_file() {
+    local declared="$1" challenge_path="$2"
+
+    # Absolute path — use directly
+    if [[ "$declared" == /* ]]; then
+        if [[ -f "$declared" ]]; then
+            echo "$declared"
+            return 0
+        fi
+        log_warning "File not found (absolute path): $declared"
+        return 1
+    fi
+
+    # Relative path — try challenge root first, then files/ subdir
+    local candidate
+    for candidate in \
+        "${challenge_path}/${declared}" \
+        "${challenge_path}/files/${declared}"
+    do
+        if [[ -f "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    log_warning "File not found (tried challenge root and files/ subdir): $declared"
+    return 1
+}
 
 ctfd_upload_challenge_files() {
     local challenge_data="$1" challenge_id="$2" challenge_path="$3"
@@ -65,26 +93,47 @@ ctfd_upload_challenge_files() {
 
     log_debug "Uploading files..."
 
-    while IFS= read -r file_path; do
-        [[ -z "$file_path" || "$file_path" == "null" ]] && continue
+    local any_failed=0
+    while IFS= read -r declared_path; do
+        [[ -z "$declared_path" || "$declared_path" == "null" ]] && continue
 
         local full_path
-        if [[ "$file_path" = /* ]]; then
-            full_path="$file_path"
-        else
-            full_path="$challenge_path/$file_path"
-        fi
+        full_path="$(_resolve_challenge_file "$declared_path" "$challenge_path")" || {
+            any_failed=1
+            continue
+        }
 
-        if [[ -f "$full_path" ]]; then
-            ctfd_upload_file "$full_path" "$challenge_id" >/dev/null || {
-                log_warning "Failed to upload: $(basename "$full_path")"
-                return 1
-            }
-            log_debug "Uploaded: $(basename "$full_path")"
-        else
-            log_warning "File not found: $full_path"
-        fi
+        ctfd_upload_file "$full_path" "$challenge_id" >/dev/null || {
+            log_warning "Failed to upload: $(basename "$full_path")"
+            any_failed=1
+            continue
+        }
+        log_debug "Uploaded: $(basename "$full_path")"
     done < <(echo "$challenge_data" | jq -r '.files // [] | .[]')
+
+    return "$any_failed"
+}
+
+ctfd_delete_challenge_files() {
+    local challenge_id="$1"
+
+    local response
+    response="$(ctfd_api_call GET "/api/v1/files?challenge_id=${challenge_id}")" || {
+        log_warning "Could not list files for challenge $challenge_id"
+        return 1
+    }
+
+    local file_ids
+    file_ids="$(echo "$response" | jq -r '.data // [] | .[].id' 2>/dev/null)"
+    [[ -z "$file_ids" ]] && { log_debug "No existing files to delete for challenge $challenge_id"; return 0; }
+
+    local file_id
+    while IFS= read -r file_id; do
+        [[ -z "$file_id" || "$file_id" == "null" ]] && continue
+        ctfd_api_call DELETE "/api/v1/files/$file_id" >/dev/null || \
+            log_warning "Failed to delete file ID $file_id from challenge $challenge_id"
+        log_debug "Deleted file ID: $file_id"
+    done <<< "$file_ids"
 }
 
 # ── Hints ────────────────────────────────────────────────────────────────────

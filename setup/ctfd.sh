@@ -99,6 +99,7 @@ install_ctfd() {
 
     # ── Traefik config selection + CA auto-switch ──
     local traefik_cfg="$infra_dir/traefik-config/traefik.yml"
+    local traefik_local_cfg="$infra_dir/traefik-config/traefik-local.yml"
     local staging_ca="https://acme-staging-v02.api.letsencrypt.org/directory"
     local production_ca="https://acme-v02.api.letsencrypt.org/directory"
 
@@ -137,18 +138,28 @@ install_ctfd() {
         fi
     fi
 
-    # ── Ensure Let's Encrypt storage directory exists ──
     mkdir -p "$infra_dir/traefik-config/letsencrypt"
 
-    # ── Patch Traefik static configs with the actual Docker network name ──
+    # ── Patch Traefik static configs with runtime values ──
     log_info "Setting Traefik Docker provider network to: $docker_proxy_network"
     local traefik_file
-    for traefik_file in "$infra_dir/traefik-config/traefik.yml" "$infra_dir/traefik-config/traefik-local.yml"; do
+    for traefik_file in "$traefik_cfg" "$traefik_local_cfg"; do
         if [[ -f "$traefik_file" ]]; then
             sed -i "s|network:.*_proxy|network: ${docker_proxy_network}|" "$traefik_file"
         fi
     done
     log_success "Traefik network configuration updated"
+
+    # 2. Domain and DNS provider (production only — local has no TLS)
+    local domain="${CONFIG[DOMAIN]}"
+    log_info "Patching Traefik production config with domain: $domain"
+    sed -i "s|__BASE_DOMAIN__|${domain}|g" "$traefik_cfg"
+
+    local dns_provider="${CONFIG[DNS_PROVIDER]:-cloudflare}"
+    log_info "Setting ACME DNS-01 challenge provider to: $dns_provider"
+    sed -i "s|__DNS_PROVIDER__|${dns_provider}|g" "$traefik_cfg"
+    setup_env_key DNS_PROVIDER "$dns_provider"
+    log_success "Traefik wildcard TLS configuration complete (domain: $domain, provider: $dns_provider)"
 
     # ── Build and pull Docker images ──
     log_info "Building CTFd docker image... This may take a while"
