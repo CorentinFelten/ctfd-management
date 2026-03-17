@@ -11,9 +11,9 @@ ctfd_get_challenge_id_by_name() {
     local name="$1"
 
     local response
-    response="$(ctfd_api_call GET "/api/v1/challenges")" || return 1
+    response="$(ctfd_api_call GET "/api/v1/challenges?view=admin&per_page=500")" || return 1
 
-    echo "$response" | jq -r ".data[] | select(.name == \"$name\") | .id" 2>/dev/null | head -n1
+    echo "$response" | jq -r --arg name "$name" '.data[] | select(.name == $name) | .id' 2>/dev/null | head -n1
 }
 
 # ── Build the common JSON payload for a challenge ────────────────────────────
