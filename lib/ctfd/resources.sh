@@ -234,6 +234,41 @@ ctfd_add_topics() {
     done < <(echo "$challenge_data" | jq -r '.topics // [] | .[]')
 }
 
+# ── Requirements pre-flight check ────────────────────────────────────────────
+
+ctfd_preflight_requirements() {
+    local challenge_data="$1" challenge_name="$2"
+
+    local requirements_json
+    requirements_json="$(echo "$challenge_data" | jq -c '.requirements // []')"
+    [[ "$requirements_json" == "[]" || "$requirements_json" == "null" ]] && return 0
+
+    log_debug "Pre-flight: resolving requirements for '$challenge_name'..."
+
+    while IFS= read -r req_entry; do
+        [[ -z "$req_entry" || "$req_entry" == "null" ]] && continue
+
+        # Numeric IDs are taken as-is — nothing to resolve
+        echo "$req_entry" | jq -e 'type == "number"' >/dev/null 2>&1 && continue
+
+        local req_name resolved_id
+        req_name="$(echo "$req_entry" | jq -r '.')"
+        resolved_id="$(ctfd_get_challenge_id_by_name "$req_name")" || {
+            log_error "Pre-flight failed: API error while resolving requirement '$req_name' for '$challenge_name'"
+            return 1
+        }
+
+        if [[ -z "$resolved_id" || "$resolved_id" == "null" ]]; then
+            log_error "Pre-flight failed: requirement '$req_name' not found in CTFd — ingest it before '$challenge_name'"
+            return 1
+        fi
+
+        log_debug "Pre-flight: requirement '$req_name' → ID $resolved_id OK"
+    done < <(echo "$challenge_data" | jq -c '.requirements // [] | .[]')
+
+    return 0
+}
+
 # ── Requirements ─────────────────────────────────────────────────────────────
 
 ctfd_add_requirements() {
@@ -254,21 +289,29 @@ ctfd_add_requirements() {
             # Already a numeric ID
             prereq_ids+=("$(echo "$req_entry" | jq -r '.')")
         else
-            # String name → resolve to ID
+            # String name → resolve to ID; do NOT suppress errors or swallow failures
             local req_name resolved_id
             req_name="$(echo "$req_entry" | jq -r '.')"
-            resolved_id="$(ctfd_get_challenge_id_by_name "$req_name" 2>/dev/null || true)"
+            resolved_id="$(ctfd_get_challenge_id_by_name "$req_name")" || {
+                log_error "API error while resolving requirement '$req_name' for challenge ID $challenge_id"
+                return 1
+            }
 
             if [[ -n "$resolved_id" && "$resolved_id" != "null" ]]; then
                 prereq_ids+=("$resolved_id")
                 log_debug "Resolved requirement '$req_name' → ID $resolved_id"
             else
-                log_warning "Could not resolve requirement by name: '$req_name' — skipping"
+                log_error "Requirement '$req_name' not found in CTFd — it must be ingested before challenge ID $challenge_id"
+                return 1
             fi
         fi
     done < <(echo "$challenge_data" | jq -c '.requirements // [] | .[]')
 
-    [[ ${#prereq_ids[@]} -eq 0 ]] && return 0
+    # Guard: requirements were declared but all entries were blank/null
+    if [[ ${#prereq_ids[@]} -eq 0 ]]; then
+        log_error "Requirements were declared but none could be resolved for challenge ID $challenge_id"
+        return 1
+    fi
 
     local prereqs_array
     prereqs_array="$(printf '%s\n' "${prereq_ids[@]}" | jq -R 'tonumber' | jq -sc '.')"
@@ -282,7 +325,7 @@ ctfd_add_requirements() {
     log_debug "Setting requirements on challenge ID $challenge_id: $prereqs_array"
 
     ctfd_api_call PATCH "/api/v1/challenges/$challenge_id" "$req_payload" >/dev/null || {
-        log_warning "Failed to set requirements for challenge ID $challenge_id"
+        log_error "Failed to set requirements for challenge ID $challenge_id"
         return 1
     }
     log_debug "Requirements set"

@@ -10,6 +10,8 @@ readonly _LIB_CTFD_CHALLENGE_LOADED=1
 ctfd_get_challenge_id_by_name() {
     local name="$1"
 
+    # Use view=admin so hidden/unlisted challenges are included, and per_page=500
+    # to avoid pagination truncating recently-created challenges from results.
     local response
     response="$(ctfd_api_call GET "/api/v1/challenges?view=admin&per_page=500")" || return 1
 
@@ -113,6 +115,9 @@ ctfd_install_challenge() {
         log_debug "Challenge '$name' already exists with ID $existing_id"
         return 2   # special code: already exists
     fi
+
+    # Pre-flight: verify all requirements exist in CTFd before writing anything
+    ctfd_preflight_requirements "$challenge_data" "$name" || return 1
 
     # Build payload
     local api_data
