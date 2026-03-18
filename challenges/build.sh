@@ -51,7 +51,46 @@ _compose_single_quiet() {
     fi
 }
 
-# ── Build all docker-compose.yml files found under the challenge path ────────
+# ── Inject deterministic image tags into a compose file ─────────────────────
+
+_compose_inject_tags() {
+    local compose_file="$1"
+    local challenge_name
+    challenge_name="$(basename "$(dirname "$compose_file")" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/-$//')"
+
+    # Collect service names that have a build: key but no image: key
+    local -a services_needing_tag=()
+    local svc
+    while IFS= read -r svc; do
+        [[ -z "$svc" || "$svc" == "null" ]] && continue
+        services_needing_tag+=("$svc")
+    done < <(yq '
+        .services
+        | to_entries
+        | .[]
+        | select(.value.build != null and .value.image == null)
+        | .key
+    ' "$compose_file" 2>/dev/null)
+
+    if [[ ${#services_needing_tag[@]} -eq 0 ]]; then
+        log_debug "No untagged build services in: $compose_file"
+        return 0
+    fi
+
+    log_debug "Injecting image tags for ${#services_needing_tag[@]} service(s) in: $compose_file"
+
+    local svc_name tag
+    for svc_name in "${services_needing_tag[@]}"; do
+        tag="${challenge_name}_${svc_name}:latest"
+        yq -i ".services.${svc_name}.image = \"${tag}\"" "$compose_file" || {
+            log_error "Failed to inject image tag for service '${svc_name}' in: $compose_file"
+            return 1
+        }
+        log_debug "Tagged service '${svc_name}' as '${tag}'"
+    done
+}
+
+# ── Build all docker-compose.yml files for zync/custom_compose challenges ────
 
 build_compose_stacks() {
     local total=0 ok=0 fail=0
@@ -59,12 +98,22 @@ build_compose_stacks() {
 
     log_info "Discovering docker-compose.yml files..."
 
-    local category challenge compose_file
+    local category challenge yml compose_file
     for category in "${CONFIG[CHALLENGE_PATH]}"/*; do
         [[ -d "$category" ]] || continue
         for challenge in "$category"/*; do
             [[ -d "$challenge" ]] || continue
             should_process_challenge "$category" "$challenge" || continue
+
+            yml="$challenge/challenge.yml"
+            [[ -f "$yml" ]] || continue
+
+            # Only process challenges that are type=zync AND playbook_name=custom_compose
+            local ctype cplaybook
+            ctype="$(get_challenge_info "$yml" "type")"
+            [[ "$ctype" == "zync" ]] || continue
+            cplaybook="$(get_challenge_info "$yml" "playbook_name")"
+            [[ "$cplaybook" == "custom_compose" ]] || continue
 
             for compose_file in "$challenge"/docker-compose.yml "$challenge"/docker-compose.yaml; do
                 [[ -f "$compose_file" ]] || continue
@@ -76,6 +125,13 @@ build_compose_stacks() {
 
     log_info "Found $total docker-compose stack(s) to build"
     [[ $total -eq 0 ]] && { log_info "No docker-compose stacks to build"; return 0; }
+
+    # Inject deterministic image tags before any build starts
+    log_debug "Injecting image tags into compose files..."
+    local compose_file
+    for compose_file in "${compose_files[@]}"; do
+        _compose_inject_tags "$compose_file" || return 1
+    done
 
     local current=0
     local max_par="${CONFIG[PARALLEL_BUILDS]}"
