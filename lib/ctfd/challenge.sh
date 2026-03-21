@@ -88,6 +88,23 @@ _ctfd_build_challenge_payload() {
     echo "$api_data"
 }
 
+# ── Delete a challenge and all its owned resources ───────────────────────────
+
+ctfd_delete_challenge() {
+    local challenge_id="$1" challenge_name="${2:-ID $1}"
+
+    # Best-effort file cleanup first (CTFd may not cascade storage deletion)
+    ctfd_delete_challenge_files "$challenge_id" 2>/dev/null || \
+        log_debug "Could not pre-delete files for '$challenge_name' during rollback (continuing)"
+
+    ctfd_api_call DELETE "/api/v1/challenges/$challenge_id" >/dev/null || {
+        log_error "Rollback: failed to delete challenge '$challenge_name' (ID $challenge_id) from CTFd — manual cleanup required"
+        return 1
+    }
+
+    log_debug "Rollback: deleted challenge '$challenge_name' (ID $challenge_id)"
+}
+
 # ── Install (create) a new challenge ─────────────────────────────────────────
 
 ctfd_install_challenge() {
@@ -148,12 +165,21 @@ ctfd_install_challenge() {
     log_debug "Challenge created with ID: $challenge_id"
 
     # Attach resources
-    ctfd_add_flags              "$challenge_data" "$challenge_id" "$challenge_path" || return 1
-    ctfd_upload_challenge_files "$challenge_data" "$challenge_id" "$challenge_path" || return 1
-    ctfd_add_hints              "$challenge_data" "$challenge_id"                   || return 1
-    ctfd_add_tags               "$challenge_data" "$challenge_id"                   || return 1
-    ctfd_add_topics             "$challenge_data" "$challenge_id"                   || return 1
-    ctfd_add_requirements       "$challenge_data" "$challenge_id"                   || return 1
+    _rollback_install() {
+        local step="$1"
+        log_error "Failed to attach $step for '$name' — rolling back"
+        if ctfd_delete_challenge "$challenge_id" "$name"; then
+            log_warning "Rolled back: challenge '$name' has been removed from CTFd"
+        fi
+        return 1
+    }
+
+    ctfd_add_flags              "$challenge_data" "$challenge_id" "$challenge_path" || { _rollback_install "flags";        return 1; }
+    ctfd_upload_challenge_files "$challenge_data" "$challenge_id" "$challenge_path" || { _rollback_install "files";        return 1; }
+    ctfd_add_hints              "$challenge_data" "$challenge_id"                   || { _rollback_install "hints";        return 1; }
+    ctfd_add_tags               "$challenge_data" "$challenge_id"                   || { _rollback_install "tags";         return 1; }
+    ctfd_add_topics             "$challenge_data" "$challenge_id"                   || { _rollback_install "topics";       return 1; }
+    ctfd_add_requirements       "$challenge_data" "$challenge_id"                   || { _rollback_install "requirements"; return 1; }
 
     return 0
 }

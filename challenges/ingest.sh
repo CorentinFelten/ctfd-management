@@ -26,14 +26,28 @@ ingest_challenges() {
             }
 
             if [[ -f "$category/$cname/challenge.yml" ]]; then
-                to_ingest+=("$category/$cname")
-                ((++total))
+                if validate_compose_image_tags "$category/$cname"; then
+                    to_ingest+=("$category/$cname")
+                    ((++total))
+                else
+                    log_error "Skipping '$cname': docker-compose image tag validation failed (see errors above)"
+                    failed_names+=("$cname"); ((++fail))
+                fi
             fi
         done
     done
 
-    log_info "Found $total challenges to ingest"
-    [[ $total -eq 0 ]] && { log_warning "No challenges found to ingest"; return 0; }
+    log_info "Found $total challenges to ingest${fail:+ ($fail rejected by tag validation)}"
+    if [[ $total -eq 0 ]]; then
+        if [[ $fail -gt 0 ]]; then
+            log_error "No challenges to ingest \u2014 all candidates failed tag validation"
+            log_error "Failed challenges:"
+            printf '  - %s\n' "${failed_names[@]}" >&2
+            return 1
+        fi
+        log_warning "No challenges found to ingest"
+        return 0
+    fi
 
     if [[ "${CONFIG[DRY_RUN]}" == "false" ]]; then
         echo >&2
