@@ -9,41 +9,28 @@ set -euo pipefail
 # ============================================================================
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly INFRA_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-readonly BASE_PATH="$(cd "$INFRA_DIR/.." && pwd)"
-readonly ENV_FILE="${INFRA_DIR}/.env"
-readonly DOCKER_COMPOSE_PATH="${INFRA_DIR}/docker-compose.yml"
-readonly BACKUP_BASE_DIR="${BASE_PATH}/backups"
-readonly CTFD_UPLOADS_PATH="${BASE_PATH}/data/CTFd/uploads"
+# DEPLOY_DIR points to the deployment working directory ($WORKING_DIR/deploy).
+# Set it as an env var when invoking manually, or let setup.sh embed it in cron.
+readonly _DEPLOY_DIR="${DEPLOY_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+readonly ENV_FILE="${_DEPLOY_DIR}/.env"
+readonly DOCKER_COMPOSE_PATH="${_DEPLOY_DIR}/docker-compose.yml"
+readonly BACKUP_BASE_DIR="$(dirname "${_DEPLOY_DIR}")/backups"
+readonly CTFD_UPLOADS_PATH="${_DEPLOY_DIR}/data/CTFd/uploads"
 readonly CONTAINER_NAME="maria-db"
 
 LOG_FILE="${BACKUP_BASE_DIR}/restore.log"
 RESTORE_TEMP_DIR="${BACKUP_BASE_DIR}/restore_temp"
 
 # ============================================================================
-# Functions
+# Shared utilities
 # ============================================================================
 
-log_message() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "${LOG_FILE}"
-}
+# shellcheck source=backup/common.sh
+source "${SCRIPT_DIR}/common.sh"
 
-# Read a value from the .env file (same logic as backup script)
-read_env_value() {
-    local key="$1"
-    local value=""
-
-    if [[ -f "${ENV_FILE}" ]]; then
-        value=$(grep "^${key}=" "${ENV_FILE}" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d "'\"\r")
-    fi
-
-    if [[ -z "$value" ]] && command -v docker &>/dev/null; then
-        value=$(docker compose -f "${DOCKER_COMPOSE_PATH}" config 2>/dev/null \
-            | grep -A0 "${key}" | head -n1 | sed 's/.*: //' | tr -d "'\"\r" || true)
-    fi
-
-    echo "$value"
-}
+# ============================================================================
+# Functions
+# ============================================================================
 
 cleanup() {
     if [[ -d "${RESTORE_TEMP_DIR}" ]]; then

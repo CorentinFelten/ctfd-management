@@ -11,12 +11,15 @@ set -euo pipefail
 # ============================================================================
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly INFRA_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-readonly BASE_PATH="$(cd "$INFRA_DIR/.." && pwd)"
-readonly ENV_FILE="${INFRA_DIR}/.env"
-readonly DOCKER_COMPOSE_PATH="${INFRA_DIR}/docker-compose.yml"
-readonly BACKUP_BASE_DIR="${BASE_PATH}/backups"
-readonly CTFD_UPLOADS_PATH="${BASE_PATH}/data/CTFd/uploads"
+# DEPLOY_DIR is injected by cron (set via modules/setup/backup.sh) and points to
+# the deployment working directory ($WORKING_DIR/deploy) where .env and
+# docker-compose.yml live.  Falls back to the parent of the repo for backwards
+# compatibility with manually invoked runs.
+readonly _DEPLOY_DIR="${DEPLOY_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+readonly ENV_FILE="${_DEPLOY_DIR}/.env"
+readonly DOCKER_COMPOSE_PATH="${_DEPLOY_DIR}/docker-compose.yml"
+readonly BACKUP_BASE_DIR="$(dirname "${_DEPLOY_DIR}")/backups"
+readonly CTFD_UPLOADS_PATH="${_DEPLOY_DIR}/data/CTFd/uploads"
 readonly MAX_BACKUPS=5
 readonly CONTAINER_NAME="maria-db"
 readonly LOCK_FILE="/tmp/ctfd_backup.lock"
@@ -27,32 +30,15 @@ BACKUP_DIR="${BACKUP_BASE_DIR}/ctfd_backup_${TIMESTAMP}"
 LOG_FILE="${BACKUP_BASE_DIR}/backup.log"
 
 # ============================================================================
-# Functions
+# Shared utilities
 # ============================================================================
 
-log_message() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "${LOG_FILE}"
-}
+# shellcheck source=backup/common.sh
+source "${SCRIPT_DIR}/common.sh"
 
-# Read a value from the .env file (where setup.sh writes actual credentials).
-# Falls back to a simple grep of docker-compose for the default value.
-read_env_value() {
-    local key="$1"
-    local value=""
-
-    # Primary: read from .env (contains actual generated secrets)
-    if [[ -f "${ENV_FILE}" ]]; then
-        value=$(grep "^${key}=" "${ENV_FILE}" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d "'\"\r")
-    fi
-
-    # Fallback: try docker compose config (resolves all variables)
-    if [[ -z "$value" ]] && command -v docker &>/dev/null; then
-        value=$(docker compose -f "${DOCKER_COMPOSE_PATH}" config 2>/dev/null \
-            | grep -A0 "${key}" | head -n1 | sed 's/.*: //' | tr -d "'\"\r" || true)
-    fi
-
-    echo "$value"
-}
+# ============================================================================
+# Functions
+# ============================================================================
 
 cleanup() {
     # Remove incomplete backup directory on failure
