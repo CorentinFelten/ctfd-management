@@ -11,13 +11,13 @@ install_ctfd() {
     local working_dir="${CONFIG[WORKING_DIR]}"
     local deploy_dir="${CONFIG[DEPLOY_DIR]}"
     local plugin_name="zync"
-    local plugin_path="$deploy_dir/ctfd-config/plugins/$plugin_name"
+    local plugin_path="$deploy_dir/ctfd/plugins/$plugin_name"
 
     # ── Copy config templates from repo to deploy dir ──
     log_info "Setting up deployment directory: $deploy_dir"
     mkdir -p "$deploy_dir"
     cp -r "$SCRIPT_DIR/config/traefik" "$deploy_dir/traefik-config"
-    cp -r "$SCRIPT_DIR/config/ctfd"    "$deploy_dir/ctfd-config"
+    cp -r "$SCRIPT_DIR/config/ctfd"    "$deploy_dir/ctfd"
     cp    "$SCRIPT_DIR/config/docker-compose.yml" "$deploy_dir/docker-compose.yml"
     chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$deploy_dir"
     # Re-apply CTFd container ownership after the broad chown above.
@@ -43,10 +43,10 @@ install_ctfd() {
     log_info "Installing CTFd..."
 
     # ── Clone / update plugin ──
-    mkdir -p "$deploy_dir/ctfd-config/plugins"
+    mkdir -p "$deploy_dir/ctfd/plugins"
     if [[ ! -d "$plugin_path" ]]; then
         log_info "Cloning zync instancer plugin..."
-        git -C "$deploy_dir/ctfd-config/plugins" clone "$DOCKER_PLUGIN_REPO"
+        git -C "$deploy_dir/ctfd/plugins" clone "$DOCKER_PLUGIN_REPO"
     else
         log_info "Zync plugin already exists, updating..."
         git -C "$plugin_path" pull origin main \
