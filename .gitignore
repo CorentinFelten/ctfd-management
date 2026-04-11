@@ -3,3 +3,5 @@ data/*
 .vscode/*
 *.env
 /.idea/
+*.log
+.claude

@@ -9,10 +9,11 @@ readonly _LIB_ENV_LOADED=1
 
 setup_env_key() {
     local key="$1" value="$2"
-    local env_file="${SCRIPT_DIR}/.env"
+    local env_file="${CONFIG[DEPLOY_DIR]}/.env"
 
     if [[ ! -f "$env_file" ]]; then
-        cp "${SCRIPT_DIR}/${CONFIG[DOCKER_ENV_FILE]}" "$env_file"
+        mkdir -p "${CONFIG[DEPLOY_DIR]}"
+        cp "${SCRIPT_DIR}/config/${CONFIG[DOCKER_ENV_FILE]}" "$env_file"
     fi
 
     if grep -q "^${key}=" "$env_file"; then

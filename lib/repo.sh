@@ -11,7 +11,8 @@ readonly _LIB_REPO_LOADED=1
 resolve_ctf_repo_path() {
     local repo="${CONFIG[CTF_REPO]}"
     local working_dir="${CONFIG[WORKING_DIR]}"
-    local galvanize_dir="${working_dir}/data/galvanize/challenges"
+    local deploy_dir="${working_dir}/deploy"
+    local galvanize_dir="${deploy_dir}/data/galvanize/challenges"
 
     # ── Case 3: Git URL ──────────────────────────────────────────────────────
     if is_git_url "$repo"; then

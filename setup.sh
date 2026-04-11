@@ -15,19 +15,20 @@ source "$SCRIPT_DIR/lib/dns.sh"
 
 # ── Source setup modules ─────────────────────────────────────────────────────
 
-source "$SCRIPT_DIR/setup/system.sh"
-source "$SCRIPT_DIR/setup/docker.sh"
-source "$SCRIPT_DIR/setup/directories.sh"
-source "$SCRIPT_DIR/setup/theme.sh"
-source "$SCRIPT_DIR/setup/instancer.sh"
-source "$SCRIPT_DIR/setup/ctfd.sh"
-source "$SCRIPT_DIR/setup/backup.sh"
+source "$SCRIPT_DIR/modules/setup/system.sh"
+source "$SCRIPT_DIR/modules/setup/docker.sh"
+source "$SCRIPT_DIR/modules/setup/directories.sh"
+source "$SCRIPT_DIR/modules/setup/theme.sh"
+source "$SCRIPT_DIR/modules/setup/instancer.sh"
+source "$SCRIPT_DIR/modules/setup/ctfd.sh"
+source "$SCRIPT_DIR/modules/setup/backup.sh"
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
 declare -A CONFIG=(
     [CONFIGURE_DOCKER]="true"
     [WORKING_DIR]="/home/${SUDO_USER:-$USER}"
+    [DEPLOY_DIR]=""
     [THEME]=""
     [BACKUP_SCHEDULE]="daily"
     [JWT_SECRET_KEY]=""
@@ -56,10 +57,14 @@ Options:
                             (automatically enabled for IP addresses)
     --help                  Show this help message
 
-Directory structure (created under <working-folder>/<this-repo-folder>/):
-    traefik-config/         Traefik static & dynamic configs, letsencrypt storage
-    ctfd-config/            CTFd Dockerfile and custom entrypoint
-    backup/                 Database backup & restore scripts
+Directory structure:
+    <working-folder>/deploy/                          Deployment working directory (configs, .env, compose)
+    <working-folder>/deploy/traefik-config/           Traefik static & dynamic configs, letsencrypt
+    <working-folder>/deploy/ctfd-config/              CTFd Dockerfile and custom entrypoint
+    <working-folder>/deploy/ctfd-config/plugins/zync/ CTFd instancer plugin clone
+    <working-folder>/deploy/ansible-ssh/              Ansible SSH key pair
+    <working-folder>/deploy/data/                     Runtime data (database, uploads, galvanize)
+    <working-folder>/deploy/cron_backup.log           Backup cron job log
 
 Examples:
     $SCRIPT_NAME --domain example.com
@@ -114,6 +119,8 @@ parse_arguments() {
     CONFIG[DOMAIN]="${CONFIG[DOMAIN]#https://}"
     CONFIG[DOMAIN]="${CONFIG[DOMAIN]#http://}"
     CONFIG[DOMAIN]="${CONFIG[DOMAIN]%%/*}"
+
+    CONFIG[DEPLOY_DIR]="${CONFIG[WORKING_DIR]}/deploy"
 
     if [[ -z ${CONFIG[NO_HTTPS]:-} ]] && is_ip_address "${CONFIG[DOMAIN]}"; then
         log_info "Detected IP address in --domain, automatically enabling --no-https"

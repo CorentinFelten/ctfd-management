@@ -132,7 +132,7 @@ dns_setup_wizard() {
         # Check if already set in environment or .env
         var_value="${!var_name:-}"
         if [[ -z "$var_value" ]]; then
-            var_value="$(grep "^${var_name}=" "${SCRIPT_DIR}/.env" 2>/dev/null \
+            var_value="$(grep "^${var_name}=" "${CONFIG[DEPLOY_DIR]:-${SCRIPT_DIR}}/.env" 2>/dev/null \
                 | head -n1 | cut -d= -f2- | tr -d "'\"\r" || true)"
         fi
 
@@ -172,7 +172,7 @@ dns_setup_wizard() {
 # Returns 0 if valid, 1 if credentials are missing.
 dns_validate_credentials() {
     local provider="${1:-${CONFIG[DNS_PROVIDER]:-cloudflare}}"
-    local env_file="${SCRIPT_DIR}/.env"
+    local env_file="${CONFIG[DEPLOY_DIR]:-${SCRIPT_DIR}}/.env"
 
     if ! dns_provider_exists "$provider"; then
         log_error "Unknown DNS provider: $provider"
