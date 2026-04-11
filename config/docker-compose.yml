@@ -116,6 +116,7 @@ services:
   instancer:
     image: ghcr.io/28pollux28/galvanize:latest
     container_name: galvanize-instancer
+    profiles: [instancer]
     stop_grace_period: 1m
     stop_signal: SIGINT
     labels:

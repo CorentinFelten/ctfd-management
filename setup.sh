@@ -34,6 +34,7 @@ declare -A CONFIG=(
     [JWT_SECRET_KEY]=""
     [DOCKER_ENV_FILE]="env.production"
     [DNS_PROVIDER]="cloudflare"
+    [NO_INSTANCER]=""
 )
 
 # ── Usage ────────────────────────────────────────────────────────────────────
@@ -48,7 +49,8 @@ Options:
     --working-folder DIR    Set working directory (default: /home/\$USER)
     --theme PATH_OR_URL     Path to local theme folder or Git URL to clone
     --backup-schedule TYPE  Set backup schedule: daily, hourly, or 10min (default: daily)
-    --instancer-url URL     Set instancer URL (default: local instancer)
+    --instancer-url URL     Use an external Galvanize instancer (skips local setup)
+    --no-instancer          Skip Galvanize setup entirely (deploy it separately later)
     --dns-provider NAME     DNS provider for wildcard TLS certs (default: cloudflare)
                             Supported: cloudflare, route53, digitalocean, hetzner,
                             ovh, gandiv5, gcloud, godaddy, namecheap, ionos
@@ -101,6 +103,8 @@ parse_arguments() {
             --instancer-url)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --instancer-url"
                 CONFIG[INSTANCER_URL]="$2"; shift 2 ;;
+            --no-instancer)
+                CONFIG[NO_INSTANCER]="true"; shift ;;
             --dns-provider)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --dns-provider"
                 CONFIG[DNS_PROVIDER]="$2"; shift 2 ;;
@@ -115,6 +119,10 @@ parse_arguments() {
 
     [[ -n ${CONFIG[DOMAIN]:-} ]] \
         || error_exit "Error: --domain is mandatory and must be specified."
+
+    if [[ -n "${CONFIG[INSTANCER_URL]:-}" && -n "${CONFIG[NO_INSTANCER]:-}" ]]; then
+        error_exit "--instancer-url and --no-instancer are mutually exclusive"
+    fi
 
     CONFIG[DOMAIN]="${CONFIG[DOMAIN]#https://}"
     CONFIG[DOMAIN]="${CONFIG[DOMAIN]#http://}"

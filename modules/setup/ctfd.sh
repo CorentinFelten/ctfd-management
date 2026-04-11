@@ -55,7 +55,10 @@ install_ctfd() {
     log_success "Instancer plugin configuration complete"
 
     # ── Local instancer setup ──
-    if [[ -z "${CONFIG[INSTANCER_URL]:-}" ]]; then
+    # Skipped when --instancer-url (external) or --no-instancer is given.
+    local use_local_instancer="false"
+    if [[ -z "${CONFIG[INSTANCER_URL]:-}" && -z "${CONFIG[NO_INSTANCER]:-}" ]]; then
+        use_local_instancer="true"
         local instancer_config_path="$deploy_dir/data/galvanize/config.yaml"
         log_info "Setting up local instancer..."
 
@@ -160,12 +163,15 @@ install_ctfd() {
     log_success "Traefik wildcard TLS configuration complete (domain: $domain, provider: $dns_provider)"
 
     # ── Build and pull Docker images ──
+    local -a compose_cmd=(docker compose -p "$compose_project_name" -f "$compose_file")
+    [[ "$use_local_instancer" == "true" ]] && compose_cmd+=(--profile instancer)
+
     log_info "Building CTFd docker image... This may take a while"
-    docker compose -p "$compose_project_name" -f "$compose_file" build
+    "${compose_cmd[@]}" build
     log_success "CTFd docker image successfully built"
 
-    log_info "Pulling pre-built images (galvanize, traefik, mariadb, redis)..."
-    docker compose -p "$compose_project_name" -f "$compose_file" pull -q
+    log_info "Pulling pre-built images (traefik, mariadb, redis${use_local_instancer:+, galvanize})..."
+    "${compose_cmd[@]}" pull -q
     log_success "Docker images successfully pulled"
 
     # ── Custom theme ──
@@ -187,7 +193,7 @@ install_ctfd() {
 
     # ── Start containers ──
     log_info "Starting CTFd containers..."
-    docker compose -p "$compose_project_name" -f "$compose_file" up -d
+    "${compose_cmd[@]}" up -d
     log_success "CTFd containers started successfully"
     log_success "CTFd installation complete!"
 
