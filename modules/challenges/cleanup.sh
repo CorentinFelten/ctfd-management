@@ -36,8 +36,9 @@ cleanup_docker() {
     log_info "Found ${#images[@]} challenge images"
     echo "Images to remove:" >&2
     printf '  - %s\n' "${images[@]}" >&2
-    read -rp "Remove these images? (y/N): "
-    [[ $REPLY =~ ^[Yy]$ ]] || { log_info "Cleanup cancelled"; return 0; }
+    read -rp "Remove these images? [Y/n] " -n 1 REPLY
+    echo >&2
+    [[ -z "$REPLY" || $REPLY =~ ^[Yy]$ ]] || { log_info "Cleanup cancelled"; return 0; }
 
     local removed=0 img
     for img in "${images[@]}"; do

@@ -103,9 +103,10 @@ echo "WARNING: This will REPLACE all current CTFd data with the backup!"
 echo "  - Database will be dropped and restored"
 echo "  - Uploads directory will be replaced"
 echo ""
-read -rp "Are you sure you want to continue? (yes/no): " CONFIRM
+read -rp "Are you sure you want to continue? [Y/n] " -n 1 CONFIRM
+echo ""
 
-if [[ "${CONFIRM}" != "yes" ]]; then
+if [[ -n "$CONFIRM" && ! "$CONFIRM" =~ ^[Yy]$ ]]; then
     log_message "Restore cancelled by user"
     exit 0
 fi

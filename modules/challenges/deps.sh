@@ -134,12 +134,12 @@ initialize_ctfd_config() {
         local detected_url="${scheme}://${base_domain}"
         
         echo >&2
-        read -rp "Connect to ${detected_url} ? [Y/n] " confirm || {
+        read -rp "Connect to ${detected_url} ? [Y/n] " -n 1 confirm || {
             echo >&2
             error_exit "Configuration aborted by user"
         }
-        
-        if [[ -z "$confirm" || "${confirm,,}" == "y" || "${confirm,,}" == "yes" ]]; then
+        echo >&2
+        if [[ -z "$confirm" || "${confirm,,}" == "y" ]]; then
             url="$detected_url"
         else
             read -rp "Enter CTFd instance URL: " url || {

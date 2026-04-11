@@ -16,9 +16,9 @@ setup_ansible_user() {
 
     if id "$ANSIBLE_USER" &>/dev/null; then
         log_warning "User $ANSIBLE_USER already exists"
-        read -rp "Do you want to recreate the SSH keys? (y/N): " -n 1
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        read -rp "Do you want to recreate the SSH keys? [Y/n] " -n 1 REPLY
+        echo >&2
+        if [[ -n "$REPLY" && ! $REPLY =~ ^[Yy]$ ]]; then
             log_info "Skipping Ansible user setup"
             return 0
         fi
