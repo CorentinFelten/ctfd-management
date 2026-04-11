@@ -11,7 +11,7 @@ show_status() {
 
     printf '%b%s%b\n' "$CYAN" "Environment:" "$NC" >&2
     echo "  Working Directory: ${CONFIG[WORKING_DIR]}"   >&2
-    echo "  CTF Repository: ${CONFIG[CTF_REPO]}"         >&2
+    echo "  CTF Repository: ${CONFIG[REPO]}"         >&2
     echo "  Challenge Path: ${CONFIG[CHALLENGE_PATH]}"   >&2
     echo >&2
 

@@ -9,7 +9,7 @@ readonly _LIB_REPO_LOADED=1
 # ── Public entry point ────────────────────────────────────────────────────────
 
 resolve_ctf_repo_path() {
-    local repo="${CONFIG[CTF_REPO]}"
+    local repo="${CONFIG[REPO]}"
     local working_dir="${CONFIG[WORKING_DIR]}"
     local deploy_dir="${working_dir}/deploy"
     local galvanize_dir="${deploy_dir}/data/galvanize/challenges"
@@ -23,14 +23,14 @@ resolve_ctf_repo_path() {
     # ── Case 1: bare name present in working dir ─────────────────────────────
     if [[ "$repo" != */* && -d "${working_dir}/${repo}" ]]; then
         log_info "Using existing repository in working directory: ${working_dir}/${repo}"
-        CONFIG[CTF_REPO_PATH]="${working_dir}/${repo}"
+        CONFIG[REPO_PATH]="${working_dir}/${repo}"
         return
     fi
 
     # ── Case 2: bare name present in galvanize challenges dir ────────────────
     if [[ "$repo" != */* && -d "${galvanize_dir}/${repo}" ]]; then
         log_info "Using existing repository in galvanize dir: ${galvanize_dir}/${repo}"
-        CONFIG[CTF_REPO_PATH]="${galvanize_dir}/${repo}"
+        CONFIG[REPO_PATH]="${galvanize_dir}/${repo}"
         return
     fi
 
@@ -44,11 +44,11 @@ resolve_ctf_repo_path() {
 
     if [[ -d "$resolved_path" ]]; then
         log_info "Using path directly: $resolved_path"
-        CONFIG[CTF_REPO_PATH]="$resolved_path"
+        CONFIG[REPO_PATH]="$resolved_path"
         return
     fi
 
-    error_exit "Error: Could not resolve --ctf-repo '${repo}'.
+    error_exit "Error: Could not resolve --repo '${repo}'.
   Tried:
     • ${working_dir}/${repo}
     • ${galvanize_dir}/${repo}
@@ -87,14 +87,14 @@ _clone_ctf_repo() {
             rm -rf "$dest"
         else
             log_warning "Repository already cloned at '${dest}' — skipping clone (pass --force to re-clone)."
-            CONFIG[CTF_REPO_PATH]="$dest"
+            CONFIG[REPO_PATH]="$dest"
             return
         fi
     fi
 
     if [[ "${CONFIG[DRY_RUN]}" == "true" ]]; then
         log_info "DRY-RUN: would clone '${url}' → '${dest}'"
-        CONFIG[CTF_REPO_PATH]="$dest"
+        CONFIG[REPO_PATH]="$dest"
         return
     fi
 
@@ -125,7 +125,7 @@ _clone_ctf_repo() {
     fi
 
     log_success "Repository cloned to: ${dest}"
-    CONFIG[CTF_REPO_PATH]="$dest"
+    CONFIG[REPO_PATH]="$dest"
 }
 
 _dir_is_writable() {

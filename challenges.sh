@@ -39,8 +39,8 @@ source "$SCRIPT_DIR/modules/challenges/cleanup.sh"
 declare -A CONFIG=(
     [DRY_RUN]="false"
     [WORKING_DIR]="/home/${SUDO_USER:-$USER}"
-    [CTF_REPO]=""
-    [CTF_REPO_PATH]=""
+    [REPO]=""
+    [REPO_PATH]=""
     [ACTION]="all"
     [CATEGORIES]=""
     [CHALLENGES]=""
@@ -65,7 +65,7 @@ ACTIONS:
 
 MAIN OPTIONS:
     --working-folder DIR    Set working directory (default: /home/\$USER)
-    --ctf-repo REPO         Challenge repository — resolved in this priority order:
+    --repo REPO         Challenge repository — resolved in this priority order:
                               1. Folder name inside --working-folder (e.g. "MyCTF-Challenges")
                               2. Folder name inside <working-folder>/deploy/data/galvanize/challenges/
                               3. Git URL — cloned to --working-folder, or to
@@ -92,28 +92,28 @@ DEBUGGING:
 
 EXAMPLES:
   # Folder already present in working dir
-  $SCRIPT_NAME --ctf-repo CTF_Repo
+  $SCRIPT_NAME --repo CTF_Repo
 
   # Folder in data/galvanize/challenges/
-  $SCRIPT_NAME --ctf-repo CTF_Repo
+  $SCRIPT_NAME --repo CTF_Repo
 
   # Git URL — auto-detect clone target
-  $SCRIPT_NAME --ctf-repo https://github.com/org/CTF_Repo.git
+  $SCRIPT_NAME --repo https://github.com/org/CTF_Repo.git
 
   # Git URL with specific branch
-  $SCRIPT_NAME --ctf-repo git@github.com:org/challenges.git --git-branch main
+  $SCRIPT_NAME --repo git@github.com:org/challenges.git --git-branch main
 
   # Absolute path
-  $SCRIPT_NAME --ctf-repo /srv/ctf/challenges
+  $SCRIPT_NAME --repo /srv/ctf/challenges
 
-  $SCRIPT_NAME --action build --ctf-repo CTF_Repo --categories "web,crypto"
-  $SCRIPT_NAME --action ingest --ctf-repo CTF_Repo
-  $SCRIPT_NAME --action sync --ctf-repo CTF_Repo --force
-  $SCRIPT_NAME --ctf-repo CTF_Repo --dry-run
+  $SCRIPT_NAME --action build --repo CTF_Repo --categories "web,crypto"
+  $SCRIPT_NAME --action ingest --repo CTF_Repo
+  $SCRIPT_NAME --action sync --repo CTF_Repo --force
+  $SCRIPT_NAME --repo CTF_Repo --dry-run
 
 CONFIG FILE FORMAT:
   Create a .env file with KEY=VALUE pairs:
-    CTF_REPO=CTF_Repo
+    REPO=CTF_Repo
     WORKING_DIR=/opt/ctf
     PARALLEL_BUILDS=8
     GIT_BRANCH=main
@@ -133,9 +133,9 @@ parse_arguments() {
             --working-folder)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --working-folder"
                 CONFIG[WORKING_DIR]="$2"; shift 2 ;;
-            --ctf-repo)
-                [[ -n ${2:-} ]] || error_exit "Missing value for --ctf-repo"
-                CONFIG[CTF_REPO]="$2"; shift 2 ;;
+            --repo)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --repo"
+                CONFIG[REPO]="$2"; shift 2 ;;
             --git-branch)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --git-branch"
                 CONFIG[GIT_BRANCH]="$2"; shift 2 ;;
@@ -170,7 +170,7 @@ parse_arguments() {
     done
 
     [[ -n "${CONFIG[CONFIG_FILE]}" ]] && load_config_file "${CONFIG[CONFIG_FILE]}"
-    [[ -n "${CONFIG[CTF_REPO]}" ]]   || error_exit "Error: --ctf-repo is mandatory and must be specified."
+    [[ -n "${CONFIG[REPO]}" ]]   || error_exit "Error: --repo is mandatory and must be specified."
 
     resolve_ctf_repo_path
 }

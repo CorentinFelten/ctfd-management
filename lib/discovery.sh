@@ -11,7 +11,7 @@ readonly _LIB_DISCOVERY_LOADED=1
 # ── Resolve the path to the challenges directory ────────────────────────────
 
 get_challenges_path() {
-    local repo_path="${CONFIG[CTF_REPO_PATH]}"
+    local repo_path="${CONFIG[REPO_PATH]}"
     local complete_path="$repo_path"
 
     [[ -d "$repo_path/challenges" ]] && complete_path="$repo_path/challenges"
