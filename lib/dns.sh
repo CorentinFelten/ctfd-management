@@ -33,8 +33,8 @@ _dns_provider_field() {
     local entry
     for entry in "${DNS_PROVIDERS[@]}"; do
         if [[ "${entry%%|*}" == "$name" ]]; then
-            local IFS='|'
-            local -a parts=($entry)
+            local -a parts
+            IFS='|' read -ra parts <<< "$entry"
             printf '%s' "${parts[$field_idx]}"
             return 0
         fi

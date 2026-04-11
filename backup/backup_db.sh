@@ -86,7 +86,7 @@ if [[ ! "${DB_NAME}" =~ ^[a-zA-Z0-9_]+$ ]]; then
 fi
 
 # Check if container is running
-if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+if ! docker ps --format '{{.Names}}' | grep -Fxq "${CONTAINER_NAME}"; then
     log_message "ERROR: Container ${CONTAINER_NAME} is not running"
     exit 1
 fi
@@ -115,7 +115,7 @@ if [[ ! -s "${BACKUP_DIR}/database.sql.gz" ]]; then
     exit 1
 fi
 
-if ! gunzip -c "${BACKUP_DIR}/database.sql.gz" | tail -5 | grep -q "Dump completed"; then
+if ! gunzip -c "${BACKUP_DIR}/database.sql.gz" | tail -5 | grep -Fq "Dump completed"; then
     log_message "WARNING: Database dump may be incomplete (missing 'Dump completed' footer)"
 fi
 

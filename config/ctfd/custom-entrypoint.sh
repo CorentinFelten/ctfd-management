@@ -4,7 +4,7 @@
 # Uses a marker file so pip install only runs once per container lifecycle,
 # not on every restart.
 
-set -e
+set -eu
 
 # Verify the upload directory is writable before attempting to start CTFd.
 # If it is root-owned (Docker created it without the setup script having run),
