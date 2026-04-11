@@ -8,9 +8,9 @@ The purpose of this repository is to propose a simple setup and challenge manage
 
 Bash script that automates the installation and configuration of a CTFd server using the [Zync](https://github.com/28Pollux28/zync) plugin and its dedicated instancer [Galvanize](https://github.com/28Pollux28/galvanize).
 
-### 2. Challenge Management Tool (`challenges_management.sh`)
+### 2. Challenge Management Tool (`challenges.sh`)
 
-Bash script for building, ingesting, and synchronizing CTF challenges with support for Docker containers and Docker compose.
+Bash script for building, ingesting, and synchronizing CTF challenges with support for Docker containers and Docker Compose.
 
 # Prerequisites
 
@@ -48,19 +48,24 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 
 ## Installation Script Options
 
-| Option                   | Description                                                      | Required |
-|--------------------------|------------------------------------------------------------------|----------|
-| `--domain domain/IP`      | URL/domain of your CTFd server                                   | ✅ Yes   |
-| `--working-folder DIR`   | Working directory (default: `/home/$USER`)                       | ❌ No    |
-| `--theme DIR/URL`        | Enables the use of a personalised theme                          | ❌ No    |
-| `--backup-schedule TYPE` | Database backup frequency (`daily` (default), `hourly`, `10min`) | ❌ No    |
-| `--no-https`             | Deployment without HTTPS                                         | ❌ No    |
-| `--help`                 | Display help                                                     | ❌ No    |
+| Option                   | Description                                                                      | Required |
+|--------------------------|----------------------------------------------------------------------------------|----------|
+| `--domain domain/IP`     | URL/domain of your CTFd server                                                   | ✅ Yes   |
+| `--working-folder DIR`   | Working directory (default: `/home/$USER`)                                       | ❌ No    |
+| `--theme DIR/URL`        | Enables the use of a personalised theme                                          | ❌ No    |
+| `--backup-schedule TYPE` | Database backup frequency (`daily` (default), `hourly`, `10min`)                 | ❌ No    |
+| `--instancer-url URL`    | Use an external Galvanize instancer instead of deploying one locally             | ❌ No    |
+| `--no-instancer`         | Skip Galvanize setup entirely (deploy it separately later)                       | ❌ No    |
+| `--dns-provider NAME`    | DNS provider for wildcard TLS certs (default: `cloudflare`)                      | ❌ No    |
+| `--no-https`             | Deployment without HTTPS (automatically enabled for IP addresses)                | ❌ No    |
+| `--help`                 | Display help                                                                     | ❌ No    |
+
+> `--instancer-url` and `--no-instancer` are mutually exclusive.
 
 ## Installation Examples
 
 ```bash
-# Basic installation with domain
+# Basic installation with domain (includes local Galvanize instancer by default)
 ./setup.sh --domain example.com
 
 # Basic installation with IP address - automatically uses the --no-https option
@@ -70,9 +75,9 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 ./setup.sh --domain example.com --working-folder /opt/ctfd
 
 # Installation with custom theme
-./setup.sh --domain example.com --theme  /home/user/my-custom-theme
+./setup.sh --domain example.com --theme /home/user/my-custom-theme
 
-# Installation with custom theme downloading a theme directly from github 
+# Installation with custom theme downloading a theme directly from github
 ./setup.sh --domain example.com --theme https://github.com/user/theme.git
 
 # Hourly backup
@@ -81,13 +86,47 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 # Backup every 10 minutes
 ./setup.sh --domain example.com --backup-schedule 10min
 
+# Use an external Galvanize instancer
+./setup.sh --domain example.com --instancer-url https://instancer.example.com
+
+# Skip Galvanize entirely (deploy it independently later)
+./setup.sh --domain example.com --no-instancer
+
 # Display help
 ./setup.sh --help
 ```
 
 ## Custom theme configuration
 
-If you use the `--theme` option, the script will automatically mount the custom theme folder in the `docker-compose.yml`. 
+If you use the `--theme` option, the script will automatically mount the custom theme folder in the `docker-compose.yml`.
+
+## Galvanize Instancer Deployment
+
+By default, `setup.sh` deploys Galvanize as part of the CTFd Docker Compose stack. Two alternatives are available:
+
+- **`--instancer-url URL`** — point CTFd at an already-running Galvanize instance; no local container is started.
+- **`--no-instancer`** — skip Galvanize entirely during setup. You can deploy it independently later by running the instancer service manually with its own config (see `config/galvanize/config.yaml` for the template).
+
+## Deployment Directory Structure
+
+After running `setup.sh`, the following layout is created under `<working-folder>/deploy/`:
+
+```
+deploy/
+├── docker-compose.yml          # Active compose file (copied from repo)
+├── .env                        # Environment variables and generated secrets
+├── .secrets                    # Plaintext copy of generated secrets (chmod 600)
+├── traefik-config/             # Traefik static & dynamic configs, letsencrypt storage
+├── ctfd/                       # CTFd Dockerfile and custom entrypoint
+│   └── plugins/zync/           # CTFd instancer plugin clone
+├── ansible-ssh/                # Ansible SSH key pair (local instancer only)
+├── data/                       # Runtime data (database, uploads, galvanize)
+│   ├── CTFd/
+│   ├── mysql/
+│   ├── redis/
+│   └── galvanize/              # Galvanize config and SQLite DB (local instancer only)
+└── cron_backup.log             # Backup cron job log
+```
 
 # Challenge Management Tool
 
@@ -106,7 +145,7 @@ If you use the `--theme` option, the script will automatically mount the custom 
 
 | Option                 | Description                                                             | Required |
 |------------------------|-------------------------------------------------------------------------|----------|
-| `--ctf-repo REPO`      | Name of the challenge repository present in the working directory       | ✅ Yes   |
+| `--repo REPO`          | Name of the challenge repository present in the working directory       | ✅ Yes   |
 | `--action ACTION`      | Action to perform (all (default), build, ingest, sync, status, cleanup) | ❌ No    |
 | `--working-folder DIR` | Working directory (default: `/home/$USER`)                              | ❌ No    |
 | `--config FILE`        | Load configuration from a file                                          | ❌ No    |
@@ -139,28 +178,28 @@ If you use the `--theme` option, the script will automatically mount the custom 
 
 ```bash
 # Full configuration (build + ingest)
-./challenges_management.sh --ctf-repo challenge_repo
+./challenges.sh --repo challenge_repo
 
 # Build only for certain categories
-./challenges_management.sh --action build --ctf-repo challenge_repo --categories "web,crypto"
+./challenges.sh --action build --repo challenge_repo --categories "web,crypto"
 
 # Synchronization with forced update
-./challenges_management.sh --action sync --ctf-repo challenge_repo --force
+./challenges.sh --action sync --repo challenge_repo --force
 
 # Simulation mode to see planned actions
-./challenges_management.sh --ctf-repo challenge_repo --dry-run
+./challenges.sh --repo challenge_repo --dry-run
 
 # Processing specific challenges
-./challenges_management.sh --action build --ctf-repo challenge_repo --challenges "web-challenge-1,crypto-rsa"
+./challenges.sh --action build --repo challenge_repo --challenges "web-challenge-1,crypto-rsa"
 
 # Parallel build with 8 threads
-./challenges_management.sh --action build --ctf-repo challenge_repo --parallel-builds 8
+./challenges.sh --action build --repo challenge_repo --parallel-builds 8
 
 # Display status
-./challenges_management.sh --action status --ctf-repo challenge_repo
+./challenges.sh --action status --repo challenge_repo
 
 # Clean up Docker images
-./challenges_management.sh --action cleanup --ctf-repo challenge_repo
+./challenges.sh --action cleanup --repo challenge_repo
 ```
 
 ### Configuration File
@@ -168,7 +207,7 @@ If you use the `--theme` option, the script will automatically mount the custom 
 Create a `.env` file with `KEY=VALUE` pairs:
 
 ```bash
-CTF_REPO=challenge_repo
+REPO=challenge_repo
 WORKING_DIR=/opt/ctf
 PARALLEL_BUILDS=8
 FORCE=true
@@ -177,7 +216,7 @@ DEBUG=false
 
 Usage:
 ```bash
-./challenges_management.sh --config .env
+./challenges.sh --config .env
 ```
 
 # Script Functionality
@@ -193,7 +232,7 @@ Usage:
 - Install Docker CE, Docker Compose, etc.
 - Configure user groups
 
-### 3. Theme configuration (optionnal)
+### 3. Theme configuration (optional)
 If the `--theme` flag is used:
 - Mounts the `theme/custom/` folder in the CTFd container
 - Enables the use of custom themes
@@ -294,7 +333,7 @@ deploy_parameters:
   image: nginx:alpine                 # Docker image to deploy
   unique: false                       # Set to true if there needs to be a unique instance for all players
   published_ports:                    # Ports to expose from the container (Only for 'tcp' playbooks)
-    - 80                              # Port to expose:
+    - 80                              # Port to expose
   compose_definition: |-              # Docker Compose definition (Only for 'custom_compose' playbooks)
     version: '3'
     services:
@@ -305,6 +344,10 @@ deploy_parameters:
   env:                                # Environment variables passed to the container
     FLAG: "flag{flag_to_find_in_env}"
     TZ: Europe/Zurich
+  resource_limits:                    # Override default resource limits (optional)
+    cpus: "1"
+    memory: "512M"
+    pids_limit: 256
 ```
 
 ## Generated Configuration
@@ -313,9 +356,12 @@ The setup script automatically generates:
 - **CTFd secret key** (32 characters)
 - **Database password** (16 characters)
 - **Database root password** (16 characters)
+- **Galvanize JWT secret** (48 characters)
+
+All secrets are written to `<deploy-dir>/.secrets` (chmod 600) and to `.env`.
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-These scripts were initially developed for the PolyCyber team to automate the installation and management of CTFd servers. They were built to work specifically with the [Galvanize](https://github.com/28Pollux28/galvanize) instancer and [Zync](https://github.com/28Pollux28/zync) plugin. 
+These scripts were initially developed for the PolyCyber team to automate the installation and management of CTFd servers. They were built to work specifically with the [Galvanize](https://github.com/28Pollux28/galvanize) instancer and [Zync](https://github.com/28Pollux28/zync) plugin.

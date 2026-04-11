@@ -8,7 +8,7 @@ L'objectif de ce dépôt est de proposer un outil simple de configuration et de 
 
 Script Bash qui automatise l'installation et la configuration d'un serveur CTFd en utilisant le plugin [Zync](https://github.com/28Pollux28/zync) et son instancer dédié [Galvanize](https://github.com/28Pollux28/galvanize).
 
-### 2. Outil de gestion des challenges (`challenges_management.sh`)
+### 2. Outil de gestion des challenges (`challenges.sh`)
 
 Script Bash pour construire, ingérer et synchroniser les challenges CTF avec support des conteneurs Docker et Docker Compose.
 
@@ -48,19 +48,24 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 
 ## Options du script d'installation
 
-| Option                   | Description                                                             | Requis   |
-|--------------------------|-------------------------------------------------------------------------|----------|
-| `--domain URL/IP`      | URL/domaine de votre serveur CTFd                                       | ✅ Oui   |
-| `--working-folder DIR`   | Répertoire de travail (défaut : `/home/$USER`)                          | ❌ Non   |
-| `--theme DIR/URL`        | Permet l'utilisation d'un thème personnalisé                            | ❌ Non   |
-| `--backup-schedule TYPE` | Fréquence des sauvegardes de la base de données (`daily` (défaut), `hourly`, `10min`) | ❌ Non   |
-| `--no-https`             | Déploiement sans HTTPS                                                  | ❌ Non   |
-| `--help`                 | Afficher l'aide                                                         | ❌ Non   |
+| Option                   | Description                                                                               | Requis   |
+|--------------------------|-------------------------------------------------------------------------------------------|----------|
+| `--domain URL/IP`        | URL/domaine de votre serveur CTFd                                                         | ✅ Oui   |
+| `--working-folder DIR`   | Répertoire de travail (défaut : `/home/$USER`)                                            | ❌ Non   |
+| `--theme DIR/URL`        | Permet l'utilisation d'un thème personnalisé                                              | ❌ Non   |
+| `--backup-schedule TYPE` | Fréquence des sauvegardes (`daily` (défaut), `hourly`, `10min`)                           | ❌ Non   |
+| `--instancer-url URL`    | Utiliser un instancer Galvanize externe plutôt que d'en déployer un localement            | ❌ Non   |
+| `--no-instancer`         | Ignorer la configuration de Galvanize (le déployer séparément plus tard)                  | ❌ Non   |
+| `--dns-provider NAME`    | Fournisseur DNS pour les certificats TLS wildcard (défaut : `cloudflare`)                 | ❌ Non   |
+| `--no-https`             | Déploiement sans HTTPS (activé automatiquement pour les adresses IP)                     | ❌ Non   |
+| `--help`                 | Afficher l'aide                                                                           | ❌ Non   |
+
+> `--instancer-url` et `--no-instancer` sont mutuellement exclusifs.
 
 ## Exemples d'installation
 
 ```bash
-# Installation basique avec domaine
+# Installation basique avec domaine (inclut l'instancer Galvanize local par défaut)
 ./setup.sh --domain exemple.com
 
 # Installation basique avec une IP - utilise automatiquement l'option --no-https
@@ -81,6 +86,12 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 # Sauvegarde toutes les 10 minutes
 ./setup.sh --domain exemple.com --backup-schedule 10min
 
+# Utiliser un instancer Galvanize externe
+./setup.sh --domain exemple.com --instancer-url https://instancer.exemple.com
+
+# Ignorer Galvanize entièrement (le déployer indépendamment plus tard)
+./setup.sh --domain exemple.com --no-instancer
+
 # Afficher l'aide
 ./setup.sh --help
 ```
@@ -88,6 +99,34 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 ## Configuration du thème personnalisé
 
 Si vous utilisez l'option `--theme`, le script montera automatiquement le dossier du thème personnalisé dans le `docker-compose.yml`.
+
+## Déploiement de l'instancer Galvanize
+
+Par défaut, `setup.sh` déploie Galvanize dans le même stack Docker Compose que CTFd. Deux alternatives sont disponibles :
+
+- **`--instancer-url URL`** — pointer CTFd vers une instance Galvanize déjà en cours d'exécution ; aucun conteneur local n'est démarré.
+- **`--no-instancer`** — ignorer Galvanize entièrement lors de l'installation. Vous pouvez le déployer indépendamment plus tard en utilisant le service instancer manuellement avec sa propre configuration (voir `config/galvanize/config.yaml` pour le modèle).
+
+## Structure du répertoire de déploiement
+
+Après l'exécution de `setup.sh`, la structure suivante est créée dans `<working-folder>/deploy/` :
+
+```
+deploy/
+├── docker-compose.yml          # Fichier compose actif (copié depuis le dépôt)
+├── .env                        # Variables d'environnement et secrets générés
+├── .secrets                    # Copie en clair des secrets générés (chmod 600)
+├── traefik-config/             # Configs statiques et dynamiques Traefik, stockage letsencrypt
+├── ctfd/                       # Dockerfile CTFd et entrypoint personnalisé
+│   └── plugins/zync/           # Clone du plugin instancer CTFd
+├── ansible-ssh/                # Paire de clés SSH Ansible (instancer local uniquement)
+├── data/                       # Données d'exécution (base de données, uploads, galvanize)
+│   ├── CTFd/
+│   ├── mysql/
+│   ├── redis/
+│   └── galvanize/              # Config Galvanize et BDD SQLite (instancer local uniquement)
+└── cron_backup.log             # Journal du cron de sauvegarde
+```
 
 # Outil de gestion des challenges
 
@@ -106,7 +145,7 @@ Si vous utilisez l'option `--theme`, le script montera automatiquement le dossie
 
 | Option                 | Description                                                                          | Requis  |
 |------------------------|--------------------------------------------------------------------------------------|---------|
-| `--ctf-repo REPO`      | Nom du dépôt de challenges présent dans le répertoire de travail                     | ✅ Oui  |
+| `--repo REPO`          | Nom du dépôt de challenges présent dans le répertoire de travail                     | ✅ Oui  |
 | `--action ACTION`      | Action à effectuer (all (défaut), build, ingest, sync, status, cleanup)              | ❌ Non  |
 | `--working-folder DIR` | Répertoire de travail (défaut : `/home/$USER`)                                       | ❌ Non  |
 | `--config FILE`        | Charger une configuration depuis un fichier                                          | ❌ Non  |
@@ -128,39 +167,39 @@ Si vous utilisez l'option `--theme`, le script montera automatiquement le dossie
 
 ## Options de debug
 
-| Option                | Description                          |
-|-----------------------|--------------------------------------|
-| `--debug`             | Activer la sortie de debug           |
+| Option                | Description                              |
+|-----------------------|------------------------------------------|
+| `--debug`             | Activer la sortie de debug               |
 | `--skip-docker-check` | Ignorer la vérification du daemon Docker |
-| `--help`              | Afficher l'aide                      |
-| `--version`           | Afficher les informations de version |
+| `--help`              | Afficher l'aide                          |
+| `--version`           | Afficher les informations de version     |
 
 ## Exemples de gestion des challenges
 
 ```bash
 # Configuration complète (construction + ingestion)
-./challenges_management.sh --ctf-repo challenge_repo
+./challenges.sh --repo challenge_repo
 
 # Construction uniquement pour certaines catégories
-./challenges_management.sh --action build --ctf-repo challenge_repo --categories "web,crypto"
+./challenges.sh --action build --repo challenge_repo --categories "web,crypto"
 
 # Synchronisation avec mise à jour forcée
-./challenges_management.sh --action sync --ctf-repo challenge_repo --force
+./challenges.sh --action sync --repo challenge_repo --force
 
 # Mode simulation pour voir les actions planifiées
-./challenges_management.sh --ctf-repo challenge_repo --dry-run
+./challenges.sh --repo challenge_repo --dry-run
 
 # Traitement de challenges spécifiques
-./challenges_management.sh --action build --ctf-repo challenge_repo --challenges "web-challenge-1,crypto-rsa"
+./challenges.sh --action build --repo challenge_repo --challenges "web-challenge-1,crypto-rsa"
 
 # Construction parallèle avec 8 threads
-./challenges_management.sh --action build --ctf-repo challenge_repo --parallel-builds 8
+./challenges.sh --action build --repo challenge_repo --parallel-builds 8
 
 # Afficher le statut
-./challenges_management.sh --action status --ctf-repo challenge_repo
+./challenges.sh --action status --repo challenge_repo
 
 # Nettoyer les images Docker
-./challenges_management.sh --action cleanup --ctf-repo challenge_repo
+./challenges.sh --action cleanup --repo challenge_repo
 ```
 
 ### Fichier de configuration
@@ -168,7 +207,7 @@ Si vous utilisez l'option `--theme`, le script montera automatiquement le dossie
 Créez un fichier `.env` avec des paires `CLÉ=VALEUR` :
 
 ```bash
-CTF_REPO=challenge_repo
+REPO=challenge_repo
 WORKING_DIR=/opt/ctf
 PARALLEL_BUILDS=8
 FORCE=true
@@ -177,7 +216,7 @@ DEBUG=false
 
 Utilisation :
 ```bash
-./challenges_management.sh --config .env
+./challenges.sh --config .env
 ```
 
 # Fonctionnalités des scripts
@@ -305,6 +344,10 @@ deploy_parameters:
   env:                                # Variables d'environnement transmises au conteneur
     FLAG: "flag{flag_to_find_in_env}"
     TZ: Europe/Zurich
+  resource_limits:                    # Limites de ressources (surcharge les valeurs par défaut, optionnel)
+    cpus: "1"
+    memory: "512M"
+    pids_limit: 256
 ```
 
 ## Configuration générée
@@ -313,6 +356,9 @@ Le script d'installation génère automatiquement :
 - **Clé secrète CTFd** (32 caractères)
 - **Mot de passe de la base de données** (16 caractères)
 - **Mot de passe root de la base de données** (16 caractères)
+- **Secret JWT Galvanize** (48 caractères)
+
+Tous les secrets sont écrits dans `<deploy-dir>/.secrets` (chmod 600) et dans `.env`.
 
 ---
 
