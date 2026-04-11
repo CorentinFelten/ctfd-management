@@ -6,6 +6,15 @@
 
 set -e
 
+# Verify the upload directory is writable before attempting to start CTFd.
+# If it is root-owned (Docker created it without the setup script having run),
+# file uploads will 500 at runtime — better to fail loud here.
+if [ ! -w "/var/uploads" ]; then
+    echo "[custom-entrypoint] ERROR: /var/uploads is not writable by UID $(id -u)." >&2
+    echo "[custom-entrypoint] Run the setup script to create it with correct ownership (chown -R 1001:1001)." >&2
+    exit 1
+fi
+
 MARKER="/tmp/.plugins_installed"
 
 if [ ! -f "$MARKER" ]; then

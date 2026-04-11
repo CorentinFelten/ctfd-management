@@ -2,7 +2,7 @@
 services:
   ctfd:
     build:
-      context: ./ctfd-config
+      context: ./ctfd
       dockerfile: Dockerfile.ctfd
     container_name: ctfd
     hostname: ctfd
@@ -28,10 +28,10 @@ services:
       - ZYNC_DEPLOYER_URL=${ZYNC_DEPLOYER_URL:?Set ZYNC_DEPLOYER_URL in .env}
       - ZYNC_JWT_SECRET=${ZYNC_JWT_SECRET:?Set ZYNC_JWT_SECRET in .env}
     volumes:
-      - ${DATA_DIR:-../data}/CTFd/logs:/var/log/CTFd
-      - ${DATA_DIR:-../data}/CTFd/uploads:/var/uploads
+      - ${DATA_DIR:-./data}/CTFd/logs:/var/log/CTFd
+      - ${DATA_DIR:-./data}/CTFd/uploads:/var/uploads
 #      - ${DATA_DIR:-../data}/CTFd/themes/${THEME_NAME:-custom}:/opt/CTFd/CTFd/themes/${THEME_NAME:-custom}
-      - ../zync:/opt/CTFd/CTFd/plugins/zync:ro
+      - ./ctfd/plugins/zync:/opt/CTFd/CTFd/plugins/zync:ro
     depends_on:
       redis:
         condition: service_started
@@ -87,7 +87,7 @@ services:
       - MARIADB_DATABASE=ctfd
       - MARIADB_AUTO_UPGRADE=1
     volumes:
-      - ${DATA_DIR:-../data}/mysql:/var/lib/mysql
+      - ${DATA_DIR:-./data}/mysql:/var/lib/mysql
     networks:
       - internal
     healthcheck:
@@ -104,7 +104,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     volumes:
-      - ${DATA_DIR:-../data}/redis:/data
+      - ${DATA_DIR:-./data}/redis:/data
     networks:
       - internal
     healthcheck:
@@ -135,8 +135,8 @@ services:
       - "--config"
       - "data/config.yaml"
     volumes:
-      - ${DATA_DIR:-../data}/galvanize:/app/data/:Z
-      - ${GALVANIZE_CONFIG_PATH:-../data/galvanize/config.yaml}:/app/data/config.yaml:Z
+      - ${DATA_DIR:-./data}/galvanize:/app/data/:Z
+      - ${GALVANIZE_CONFIG_PATH:-./data/galvanize/config.yaml}:/app/data/config.yaml:Z
       - ${SSH_KEY_PATH:-../ssh/ssh-key}:/home/galvanize/.ssh/ansible-ssh:Z,ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
