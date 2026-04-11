@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # challenges/cleanup.sh — Remove Docker images built for challenges.
-# Requires: lib/common.sh, lib/challenges.sh
+# Requires: lib/common.sh, lib/discovery.sh
 
 [[ -n "${_CHALL_CLEANUP_LOADED:-}" ]] && return 0
 readonly _CHALL_CLEANUP_LOADED=1

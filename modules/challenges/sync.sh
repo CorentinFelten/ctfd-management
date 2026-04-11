@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # challenges/sync.sh — Sync (update) challenges already registered in CTFd.
-# Requires: lib/common.sh, lib/challenges.sh
+# Requires: lib/common.sh, lib/discovery.sh
 
 [[ -n "${_CHALL_SYNC_LOADED:-}" ]] && return 0
 readonly _CHALL_SYNC_LOADED=1

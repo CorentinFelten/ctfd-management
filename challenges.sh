@@ -17,21 +17,22 @@ readonly VERSION="2.0.0"
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/env.sh"
 source "$SCRIPT_DIR/lib/repo.sh"
-source "$SCRIPT_DIR/lib/challenges.sh"
-source "$SCRIPT_DIR/lib/ctfd/config.sh"
-source "$SCRIPT_DIR/lib/ctfd/api.sh"
-source "$SCRIPT_DIR/lib/ctfd/yaml.sh"
-source "$SCRIPT_DIR/lib/ctfd/resources.sh"
-source "$SCRIPT_DIR/lib/ctfd/challenge.sh"
+source "$SCRIPT_DIR/lib/discovery.sh"
+source "$SCRIPT_DIR/modules/ctfd/config.sh"
+source "$SCRIPT_DIR/modules/ctfd/api.sh"
+source "$SCRIPT_DIR/modules/ctfd/yaml.sh"
+source "$SCRIPT_DIR/modules/ctfd/resources.sh"
+source "$SCRIPT_DIR/modules/ctfd/challenge.sh"
 
 # ── Source challenge modules ─────────────────────────────────────────────────
 
-source "$SCRIPT_DIR/challenges/deps.sh"
-source "$SCRIPT_DIR/challenges/build.sh"
-source "$SCRIPT_DIR/challenges/ingest.sh"
-source "$SCRIPT_DIR/challenges/sync.sh"
-source "$SCRIPT_DIR/challenges/status.sh"
-source "$SCRIPT_DIR/challenges/cleanup.sh"
+source "$SCRIPT_DIR/modules/challenges/deps.sh"
+source "$SCRIPT_DIR/modules/challenges/build.sh"
+source "$SCRIPT_DIR/modules/challenges/compose.sh"
+source "$SCRIPT_DIR/modules/challenges/ingest.sh"
+source "$SCRIPT_DIR/modules/challenges/sync.sh"
+source "$SCRIPT_DIR/modules/challenges/status.sh"
+source "$SCRIPT_DIR/modules/challenges/cleanup.sh"
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
@@ -66,9 +67,9 @@ MAIN OPTIONS:
     --working-folder DIR    Set working directory (default: /home/\$USER)
     --ctf-repo REPO         Challenge repository — resolved in this priority order:
                               1. Folder name inside --working-folder (e.g. "MyCTF-Challenges")
-                              2. Folder name inside <working-folder>/data/galvanize/challenges/
+                              2. Folder name inside <working-folder>/deploy/data/galvanize/challenges/
                               3. Git URL — cloned to --working-folder, or to
-                                 <working-folder>/data/galvanize/challenges/ when galvanize
+                                 <working-folder>/deploy/data/galvanize/challenges/ when galvanize
                                  is configured there (detected automatically)
                               4. Absolute or relative path to any existing folder
     --git-branch BRANCH     Git branch/tag to checkout after cloning (optional)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup/instancer.sh — Create the Ansible service user and configure Galvanize.
+# modules/setup/instancer.sh — Create the Ansible service user and configure Galvanize.
 # Requires: lib/common.sh, lib/env.sh
 
 [[ -n "${_SETUP_INSTANCER_LOADED:-}" ]] && return 0
@@ -8,8 +8,7 @@ readonly _SETUP_INSTANCER_LOADED=1
 readonly ANSIBLE_USER="ansible-user"
 
 setup_ansible_user() {
-    local working_dir="${CONFIG[WORKING_DIR]}"
-    local ssh_key_dir="$working_dir/ansible-ssh"
+    local ssh_key_dir="${CONFIG[DEPLOY_DIR]}/ansible-ssh"
     local private_key_path="$ssh_key_dir/ansible_rsa"
     local public_key_path="${private_key_path}.pub"
 
@@ -78,12 +77,11 @@ setup_ansible_user() {
 }
 
 configure_instancer() {
-    local working_dir="${CONFIG[WORKING_DIR]}"
-    local config_path="$working_dir/data/galvanize/config.yaml"
+    local config_path="${CONFIG[DEPLOY_DIR]}/data/galvanize/config.yaml"
 
     # Resolve the actual Docker network name: <project_name>_proxy
     local compose_project_name
-    compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${SCRIPT_DIR}/.env" 2>/dev/null \
+    compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${CONFIG[DEPLOY_DIR]}/.env" 2>/dev/null \
         | head -n1 | cut -d= -f2- | tr -d "'\"\r")"
     compose_project_name="${compose_project_name:-ctfd_infra}"
     local docker_proxy_network="${compose_project_name}_proxy"
@@ -97,4 +95,13 @@ configure_instancer() {
 
 
     log_success "Local instancer setup complete"
+}
+
+# ── Public entry point: run both steps in order ──────────────────────────────
+# Callers (e.g. ctfd.sh) should use this wrapper so the instancer module can
+# be replaced without modifying the caller.
+
+setup_instancer() {
+    setup_ansible_user
+    configure_instancer
 }

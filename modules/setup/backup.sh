@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup/backup.sh — Make backup scripts executable and install cron job.
+# modules/setup/backup.sh — Make backup scripts executable and install cron job.
 # Requires: lib/common.sh
 
 [[ -n "${_SETUP_BACKUP_LOADED:-}" ]] && return 0
@@ -30,8 +30,7 @@ setup_backup_script() {
 
 setup_backup_cron() {
     local backup_script="$SCRIPT_DIR/backup/backup_db.sh"
-    local working_dir="${CONFIG[WORKING_DIR]}"
-    local cron_log="$working_dir/cron_backup.log"
+    local cron_log="${CONFIG[DEPLOY_DIR]}/cron_backup.log"
     local user="${SUDO_USER:-$USER}"
     local schedule="${CONFIG[BACKUP_SCHEDULE]}"
 
@@ -48,7 +47,7 @@ setup_backup_cron() {
             ;;
     esac
 
-    local cron_entry="$cron_schedule $backup_script >> $cron_log 2>&1"
+    local cron_entry="$cron_schedule DEPLOY_DIR=\"${CONFIG[DEPLOY_DIR]}\" $backup_script >> $cron_log 2>&1"
 
     if crontab -u "$user" -l 2>/dev/null | grep -Fq "$backup_script"; then
         log_warning "Cron job for backup script already exists, skipping..."

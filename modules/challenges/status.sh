@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # challenges/status.sh — Display a report of challenges, categories, and running services.
-# Requires: lib/common.sh, lib/challenges.sh
+# Requires: lib/common.sh, lib/discovery.sh
 
 [[ -n "${_CHALL_STATUS_LOADED:-}" ]] && return 0
 readonly _CHALL_STATUS_LOADED=1

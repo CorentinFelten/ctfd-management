@@ -119,8 +119,8 @@ initialize_ctfd_config() {
     # Allow Ctrl+C to cancel interactive input
     trap 'echo >&2; error_exit "Configuration aborted by user"' INT
     
-    # Auto-detect CTFd URL from the .env file produced by setup.sh
-    local env_file="${SCRIPT_DIR}/.env"
+    # Auto-detect CTFd URL from the .env file produced by setup.sh (lives in DEPLOY_DIR)
+    local env_file="${CONFIG[WORKING_DIR]}/deploy/.env"
     local base_domain="" enable_tls=""
     
     if [[ -f "$env_file" ]]; then

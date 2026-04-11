@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# setup/docker.sh — Install Docker CE if not already present.
-# Requires: lib/common.sh, setup/system.sh (identify_os)
+# modules/setup/docker.sh — Install Docker CE if not already present.
+# Requires: lib/common.sh, modules/setup/system.sh (identify_os)
 
 [[ -n "${_SETUP_DOCKER_LOADED:-}" ]] && return 0
 readonly _SETUP_DOCKER_LOADED=1

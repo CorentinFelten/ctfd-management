@@ -1,24 +1,37 @@
 #!/usr/bin/env bash
-# setup/ctfd.sh — Clone plugin repo, seed instancer config, generate secrets, pull/build images.
-# Requires: lib/common.sh, lib/env.sh, setup/instancer.sh, setup/theme.sh
+# modules/setup/ctfd.sh — Copy config templates to DEPLOY_DIR, clone plugins, generate secrets, pull/build images.
+# Requires: lib/common.sh, lib/env.sh, modules/setup/instancer.sh, modules/setup/theme.sh
 
 [[ -n "${_SETUP_CTFD_LOADED:-}" ]] && return 0
 readonly _SETUP_CTFD_LOADED=1
 
 readonly DOCKER_PLUGIN_REPO="https://github.com/28Pollux28/zync"
-readonly DOCKER_INSTANCER_REPO="https://github.com/28Pollux28/galvanize"  # cloned temporarily for config seed files
 
 install_ctfd() {
     local working_dir="${CONFIG[WORKING_DIR]}"
-    local infra_dir="$SCRIPT_DIR"
+    local deploy_dir="${CONFIG[DEPLOY_DIR]}"
     local plugin_name="zync"
-    local plugin_path="$working_dir/$plugin_name"
-    local compose_file="$infra_dir/docker-compose.yml"
+    local plugin_path="$deploy_dir/ctfd-config/plugins/$plugin_name"
+
+    # ── Copy config templates from repo to deploy dir ──
+    log_info "Setting up deployment directory: $deploy_dir"
+    mkdir -p "$deploy_dir"
+    cp -r "$SCRIPT_DIR/config/traefik" "$deploy_dir/traefik-config"
+    cp -r "$SCRIPT_DIR/config/ctfd"    "$deploy_dir/ctfd-config"
+    cp    "$SCRIPT_DIR/config/docker-compose.yml" "$deploy_dir/docker-compose.yml"
+    chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$deploy_dir"
+    # Re-apply CTFd container ownership after the broad chown above.
+    # CTFd runs as UID 1001 and must own its data directories.
+    chown -R 1001:1001 "$deploy_dir/data/CTFd/uploads"
+    chown -R 1001:1001 "$deploy_dir/data/CTFd/logs"
+    log_success "Config templates copied to deploy dir"
+
+    local compose_file="$deploy_dir/docker-compose.yml"
 
     setup_env_key COMPOSE_PROJECT_NAME "${COMPOSE_PROJECT_NAME:-ctfd_infra}"
 
     local compose_project_name=""
-    compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${infra_dir}/.env" \
+    compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${deploy_dir}/.env" \
         | head -n1 | cut -d= -f2- | tr -d "'\"\r" || true)"
     compose_project_name="${compose_project_name:-ctfd_infra}"
     local docker_proxy_network="${compose_project_name}_proxy"
@@ -30,9 +43,10 @@ install_ctfd() {
     log_info "Installing CTFd..."
 
     # ── Clone / update plugin ──
+    mkdir -p "$deploy_dir/ctfd-config/plugins"
     if [[ ! -d "$plugin_path" ]]; then
         log_info "Cloning zync instancer plugin..."
-        git -C "$working_dir" clone "$DOCKER_PLUGIN_REPO"
+        git -C "$deploy_dir/ctfd-config/plugins" clone "$DOCKER_PLUGIN_REPO"
     else
         log_info "Zync plugin already exists, updating..."
         git -C "$plugin_path" pull origin main \
@@ -42,34 +56,17 @@ install_ctfd() {
 
     # ── Local instancer setup ──
     if [[ -z "${CONFIG[INSTANCER_URL]:-}" ]]; then
-        local instancer_tmp
-        instancer_tmp="$(mktemp -d)"
-        _cleanup_files+=("$instancer_tmp")
-        local instancer_config_path="$working_dir/data/galvanize/config.yaml"
+        local instancer_config_path="$deploy_dir/data/galvanize/config.yaml"
         log_info "Setting up local instancer..."
 
-        log_info "Cloning galvanize instancer (temporary)..."
-        git clone --depth 1 "$DOCKER_INSTANCER_REPO" "$instancer_tmp/galvanize"
-
-        mkdir -p "$working_dir/data/galvanize"
-        cp "$instancer_tmp/galvanize/config.example.yaml" "$instancer_config_path"
-        cp -a "$instancer_tmp/galvanize/data/." "$working_dir/data/galvanize"
-        chown -R 1000:1000 "$working_dir/data/galvanize"
-
-        # Repo is no longer needed — image is pulled from ghcr.io
-        rm -rf "$instancer_tmp"
-        log_info "Temporary galvanize repo cleaned up"
+        log_info "Writing instancer config..."
+        mkdir -p "$deploy_dir/data/galvanize"
+        cp "$SCRIPT_DIR/config/galvanize/config.yaml" "$instancer_config_path"
+        chown -R 1000:1000 "$deploy_dir/data/galvanize"
 
         setup_env_key GALVANIZE_CONFIG_PATH "$instancer_config_path"
 
-        setup_ansible_user
-        configure_instancer
-    fi
-
-    # ── Backup compose file ──
-    if [[ -f "$compose_file" ]]; then
-        cp "$compose_file" "${compose_file}.backup.$(date +%Y%m%d%H%M%S)" \
-            || log_warning "Compose file backup failed"
+        setup_instancer
     fi
 
     # ── Generate secrets ──
@@ -98,8 +95,9 @@ install_ctfd() {
     setup_env_key ZYNC_JWT_SECRET       "$jwt_secret_key"
 
     # ── Traefik config selection + CA auto-switch ──
-    local traefik_cfg="$infra_dir/traefik-config/traefik.yml"
-    local traefik_local_cfg="$infra_dir/traefik-config/traefik-local.yml"
+    # Operate on DEPLOY_DIR copies — never touch tracked repo files
+    local traefik_cfg="$deploy_dir/traefik-config/traefik.yml"
+    local traefik_local_cfg="$deploy_dir/traefik-config/traefik-local.yml"
     local staging_ca="https://acme-staging-v02.api.letsencrypt.org/directory"
     local production_ca="https://acme-v02.api.letsencrypt.org/directory"
 
@@ -138,7 +136,7 @@ install_ctfd() {
         fi
     fi
 
-    mkdir -p "$infra_dir/traefik-config/letsencrypt"
+    mkdir -p "$deploy_dir/traefik-config/letsencrypt"
 
     # ── Patch Traefik static configs with runtime values ──
     log_info "Setting Traefik Docker provider network to: $docker_proxy_network"
@@ -193,8 +191,8 @@ install_ctfd() {
     log_success "CTFd containers started successfully"
     log_success "CTFd installation complete!"
 
-    # ── Write secrets to secured file ──
-    local secrets_file="${infra_dir}/.secrets"
+    # ── Write secrets to secured file (in deploy dir, not the repo) ──
+    local secrets_file="${deploy_dir}/.secrets"
     (
         umask 077
         cat > "$secrets_file" <<EOF

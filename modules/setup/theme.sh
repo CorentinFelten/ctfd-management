@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup/theme.sh — Clone or copy a custom CTFd theme.
+# modules/setup/theme.sh — Clone or copy a custom CTFd theme.
 # Requires: lib/common.sh
 
 [[ -n "${_SETUP_THEME_LOADED:-}" ]] && return 0
@@ -27,10 +27,11 @@ extract_theme_name() {
 setup_custom_theme() {
     local theme_source="${CONFIG[THEME]}"
     local working_dir="${CONFIG[WORKING_DIR]}"
+    local deploy_dir="${CONFIG[DEPLOY_DIR]:-${working_dir}/deploy}"
     local theme_name
     theme_name="$(extract_theme_name "$theme_source")"
     CONFIG[THEME_NAME]="$theme_name"
-    local custom_theme_dir="$working_dir/data/CTFd/themes/$theme_name"
+    local custom_theme_dir="$deploy_dir/data/CTFd/themes/$theme_name"
 
     if [[ -z "$theme_source" ]]; then
         log_info "No custom theme specified"

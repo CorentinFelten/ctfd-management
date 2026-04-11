@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# challenges/build.sh — Build Docker images for challenges (sequential & parallel).
-# Requires: lib/common.sh, lib/challenges.sh
+# modules/challenges/build.sh — Build Docker images for challenges (sequential & parallel).
+# Requires: lib/common.sh, lib/discovery.sh
 
 [[ -n "${_CHALL_BUILD_LOADED:-}" ]] && return 0
 readonly _CHALL_BUILD_LOADED=1

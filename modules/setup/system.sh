@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup/system.sh — OS identification and base package installation.
+# modules/setup/system.sh — OS identification and base package installation.
 # Requires: lib/common.sh
 
 [[ -n "${_SETUP_SYSTEM_LOADED:-}" ]] && return 0
@@ -37,8 +37,7 @@ update_system() {
         jq \
         python3-pip \
         python3-yaml \
-        wget \
-        pipx
+        wget
 
     log_success "System packages updated"
 
