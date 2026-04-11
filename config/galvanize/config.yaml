@@ -10,7 +10,7 @@ instancer:
   deployment_ttl_extension: "30m" # Time to extend deployment TTL with on extension request (default: 30m)
   deployment_extension_window: "30m" # Time window to extend deployments before expiration (default: 30m)
   deployment_max_extensions: 3 # Maximum number of extensions allowed per deployment (-1 for unlimited) (default: 3)
-  randomize_published_ports: false # TCP only: randomize host ports for non-fixed published_ports (e.g., "22" -> "34721:22")
+  randomize_published_ports: true # TCP only: randomize host ports for non-fixed published_ports (e.g., "22" -> "34721:22")
   randomized_port_min: 20000 # Lower bound for randomized host ports (default: 20000)
   randomized_port_max: 60999 # Upper bound for randomized host ports (default: 60999)
   num_workers: 10 # Number of Ansible workers for processing jobs (default: 10)
