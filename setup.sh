@@ -156,6 +156,8 @@ main() {
     setup_backup_cron
 
     log_success "CTFd server setup completed successfully!"
+    local real_user="${SUDO_USER:-$USER}"
+    sudo -u "$real_user" bash "${SCRIPT_DIR}/install-completion.sh" --quiet
 }
 
 # ── Entry point: root escalation first ───────────────────────────────────────
