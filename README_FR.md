@@ -282,9 +282,6 @@ challenge_repo/
 │   └── pwn/
 ```
 
-> [!WARNING]
-> Le script d'ingestion des challenges fonctionne dans l'ordre alphabétique des catégories et des challenges. Si un challenge a des prérequis, il est nécessaire d'ingérer les prérequis au préalable en les nommant de manière appropriée.
-
 ### Format du fichier `challenge.yml`
 
 ```yaml
