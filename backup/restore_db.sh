@@ -178,7 +178,12 @@ fi
 
 log_message "Step 1/2: Restoring MariaDB database..."
 
-if [[ ! -f "${BACKUP_DIR}/database.sql.gz" ]]; then
+db_dump=""
+if [[ -f "${BACKUP_DIR}/database.sql" ]]; then
+    db_dump="plain"
+elif [[ -f "${BACKUP_DIR}/database.sql.gz" ]]; then
+    db_dump="gzipped"
+else
     log_message "ERROR: Database backup file not found in archive"
     exit 1
 fi
@@ -191,13 +196,23 @@ if ! docker exec -e MYSQL_PWD="${DB_ROOT_PASSWORD}" "${CONTAINER_NAME}" \
 fi
 
 log_message "  Restoring database from backup..."
-if gunzip < "${BACKUP_DIR}/database.sql.gz" \
-    | docker exec -i -e MYSQL_PWD="${DB_ROOT_PASSWORD}" "${CONTAINER_NAME}" \
-        mysql -u root "${DB_NAME}" 2>/dev/null; then
-    log_message "SUCCESS: Database restored successfully"
+if [[ "$db_dump" == "plain" ]]; then
+    if docker exec -i -e MYSQL_PWD="${DB_ROOT_PASSWORD}" "${CONTAINER_NAME}" \
+        mysql -u root "${DB_NAME}" < "${BACKUP_DIR}/database.sql" 2>/dev/null; then
+        log_message "SUCCESS: Database restored successfully"
+    else
+        log_message "ERROR: Database restore failed"
+        exit 1
+    fi
 else
-    log_message "ERROR: Database restore failed"
-    exit 1
+    if gunzip < "${BACKUP_DIR}/database.sql.gz" \
+        | docker exec -i -e MYSQL_PWD="${DB_ROOT_PASSWORD}" "${CONTAINER_NAME}" \
+            mysql -u root "${DB_NAME}" 2>/dev/null; then
+        log_message "SUCCESS: Database restored successfully"
+    else
+        log_message "ERROR: Database restore failed"
+        exit 1
+    fi
 fi
 
 # ============================================================================

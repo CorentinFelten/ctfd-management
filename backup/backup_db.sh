@@ -100,9 +100,9 @@ log_message "  Database contains: users, teams, challenges, submissions, solves,
 # Use MYSQL_PWD env var instead of -p flag to avoid password exposure in ps output
 if docker exec -e MYSQL_PWD="${DB_ROOT_PASSWORD}" "${CONTAINER_NAME}" \
     mysqldump -u root --single-transaction --quick --lock-tables=false "${DB_NAME}" \
-    | gzip > "${BACKUP_DIR}/database.sql.gz"; then
+    > "${BACKUP_DIR}/database.sql"; then
 
-    DB_SIZE="$(du -h "${BACKUP_DIR}/database.sql.gz" | cut -f1)"
+    DB_SIZE="$(du -h "${BACKUP_DIR}/database.sql" | cut -f1)"
     log_message "SUCCESS: Database backup completed (${DB_SIZE})"
 else
     log_message "ERROR: Database backup failed"
@@ -110,12 +110,12 @@ else
 fi
 
 # Verify: file exists, is non-empty, and dump looks complete
-if [[ ! -s "${BACKUP_DIR}/database.sql.gz" ]]; then
+if [[ ! -s "${BACKUP_DIR}/database.sql" ]]; then
     log_message "ERROR: Database backup file is empty or missing"
     exit 1
 fi
 
-if ! gunzip -c "${BACKUP_DIR}/database.sql.gz" | tail -5 | grep -Fq "Dump completed"; then
+if ! tail -5 "${BACKUP_DIR}/database.sql" | grep -Fq "Dump completed"; then
     log_message "WARNING: Database dump may be incomplete (missing 'Dump completed' footer)"
 fi
 
