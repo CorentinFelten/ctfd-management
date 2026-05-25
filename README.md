@@ -57,6 +57,7 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 | `--instancer-url URL`    | Use an external Galvanize instancer instead of deploying one locally             | ❌ No    |
 | `--no-instancer`         | Skip Galvanize setup entirely (deploy it separately later)                       | ❌ No    |
 | `--dns-provider NAME`    | DNS provider for wildcard TLS certs (default: `cloudflare`)                      | ❌ No    |
+| `--acme-email EMAIL`     | Email address for Let's Encrypt certificates (default: `admin@polycyber.io`)     | ❌ No    |
 | `--no-https`             | Deployment without HTTPS (automatically enabled for IP addresses)                | ❌ No    |
 | `--help`                 | Display help                                                                     | ❌ No    |
 
@@ -79,6 +80,9 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 
 # Installation with custom theme downloading a theme directly from github
 ./setup.sh --domain example.com --theme https://github.com/user/theme.git
+
+# Custom ACME email for Let's Encrypt
+./setup.sh --domain example.com --acme-email admin@example.com
 
 # Hourly backup
 ./setup.sh --domain example.com --backup-schedule hourly
@@ -230,6 +234,7 @@ Usage:
 ### 2. Docker Installation
 - Add official Docker repository
 - Install Docker CE, Docker Compose, etc.
+- Enable Docker service to start on boot
 - Configure user groups
 
 ### 3. Theme configuration (optional)
@@ -356,6 +361,8 @@ The setup script automatically generates:
 - **Galvanize JWT secret** (48 characters)
 
 All secrets are written to `<deploy-dir>/.secrets` (chmod 600) and to `.env`.
+
+> **Re-running setup is safe**: if secrets already exist in `.env`, they are preserved. Only missing secrets are generated, so running `setup.sh` again will not break existing containers.
 
 ## License
 

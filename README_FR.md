@@ -57,6 +57,7 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 | `--instancer-url URL`    | Utiliser un instancer Galvanize externe plutôt que d'en déployer un localement            | ❌ Non   |
 | `--no-instancer`         | Ignorer la configuration de Galvanize (le déployer séparément plus tard)                  | ❌ Non   |
 | `--dns-provider NAME`    | Fournisseur DNS pour les certificats TLS wildcard (défaut : `cloudflare`)                 | ❌ Non   |
+| `--acme-email EMAIL`     | Adresse email pour les certificats Let's Encrypt (défaut : `admin@polycyber.io`)          | ❌ Non   |
 | `--no-https`             | Déploiement sans HTTPS (activé automatiquement pour les adresses IP)                     | ❌ Non   |
 | `--help`                 | Afficher l'aide                                                                           | ❌ Non   |
 
@@ -79,6 +80,9 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 
 # Installation avec thème personnalisé téléchargé directement depuis github
 ./setup.sh --domain exemple.com --theme https://github.com/user/theme.git
+
+# Email ACME personnalisé pour Let's Encrypt
+./setup.sh --domain exemple.com --acme-email admin@exemple.com
 
 # Sauvegarde horaire
 ./setup.sh --domain exemple.com --backup-schedule hourly
@@ -230,6 +234,7 @@ Utilisation :
 ### 2. Installation de Docker
 - Ajout du dépôt Docker officiel
 - Installation de Docker CE, Docker Compose, etc.
+- Activation du service Docker au démarrage
 - Configuration des groupes d'utilisateurs
 
 ### 3. Configuration du thème (optionnel)
@@ -356,6 +361,8 @@ Le script d'installation génère automatiquement :
 - **Secret JWT Galvanize** (48 caractères)
 
 Tous les secrets sont écrits dans `<deploy-dir>/.secrets` (chmod 600) et dans `.env`.
+
+> **Relancer le setup est sans risque** : si des secrets existent déjà dans `.env`, ils sont préservés. Seuls les secrets manquants sont générés, donc relancer `setup.sh` ne cassera pas les conteneurs existants.
 
 ---
 
