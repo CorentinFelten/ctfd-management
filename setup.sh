@@ -34,6 +34,7 @@ declare -A CONFIG=(
     [JWT_SECRET_KEY]=""
     [DOCKER_ENV_FILE]="env.production"
     [DNS_PROVIDER]="cloudflare"
+    [ACME_EMAIL]=""
     [NO_INSTANCER]=""
 )
 
@@ -55,6 +56,8 @@ Options:
                             Supported: cloudflare, route53, digitalocean, hetzner,
                             ovh, gandiv5, gcloud, godaddy, namecheap, ionos
                             Or any lego provider (https://go-acme.github.io/lego/dns/)
+    --acme-email EMAIL      Email address for Let's Encrypt certificates
+                            (default: admin@polycyber.io)
     --no-https              Disable HTTPS configuration for CTFd
                             (automatically enabled for IP addresses)
     --help                  Show this help message
@@ -75,6 +78,7 @@ Examples:
     $SCRIPT_NAME --domain example.com --working-folder /opt/ctfd
     $SCRIPT_NAME --domain example.com --theme /home/user/my-custom-theme
     $SCRIPT_NAME --domain example.com --theme https://github.com/user/theme.git
+    $SCRIPT_NAME --domain example.com --acme-email admin@example.com
     $SCRIPT_NAME --domain example.com --backup-schedule hourly
 EOF
 }
@@ -108,6 +112,9 @@ parse_arguments() {
             --dns-provider)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --dns-provider"
                 CONFIG[DNS_PROVIDER]="$2"; shift 2 ;;
+            --acme-email)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --acme-email"
+                CONFIG[ACME_EMAIL]="$2"; shift 2 ;;
             --no-https)
                 CONFIG[NO_HTTPS]="true"
                 CONFIG[DOCKER_ENV_FILE]="env.local"

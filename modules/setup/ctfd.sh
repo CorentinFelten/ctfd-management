@@ -167,7 +167,7 @@ install_ctfd() {
     done
     log_success "Traefik network configuration updated"
 
-    # 2. Domain and DNS provider (production only — local has no TLS)
+    # 2. Domain, DNS provider, and ACME email
     local domain="${CONFIG[DOMAIN]}"
     log_info "Patching Traefik production config with domain: $domain"
     sed -i "s|__BASE_DOMAIN__|${domain}|g" "$traefik_cfg"
@@ -176,6 +176,12 @@ install_ctfd() {
     log_info "Setting ACME DNS-01 challenge provider to: $dns_provider"
     sed -i "s|__DNS_PROVIDER__|${dns_provider}|g" "$traefik_cfg"
     setup_env_key DNS_PROVIDER "$dns_provider"
+
+    local acme_email="${CONFIG[ACME_EMAIL]:-admin@polycyber.io}"
+    log_info "Setting ACME email to: $acme_email"
+    sed -i "s|email:.*|email: ${acme_email}|" "$traefik_cfg"
+    setup_env_key ACME_EMAIL "$acme_email"
+
     log_success "Traefik wildcard TLS configuration complete (domain: $domain, provider: $dns_provider)"
 
     # ── Build and pull Docker images ──
