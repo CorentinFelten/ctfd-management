@@ -203,7 +203,6 @@ main() {
     esac
 
     log_success "Operation completed successfully!"
-    bash "${SCRIPT_DIR}/install-completion.sh" --quiet
 }
 
 # ── Entry point ──────────────────────────────────────────────────────────────
