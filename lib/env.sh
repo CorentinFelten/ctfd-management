@@ -17,8 +17,10 @@ setup_env_key() {
     fi
 
     if grep -q "^${key}=" "$env_file"; then
-        awk -v k="$key" -v v="$value" 'BEGIN{FS=OFS="="} $1==k{$2=v}{print}' \
-            "$env_file" > "${env_file}.tmp"
+        awk -v k="$key" -v v="$value" '{
+            if (index($0, k "=") == 1) print k "=" v
+            else print
+        }' "$env_file" > "${env_file}.tmp"
         mv "${env_file}.tmp" "$env_file"
     else
         printf '%s=%s\n' "$key" "$value" >> "$env_file"
