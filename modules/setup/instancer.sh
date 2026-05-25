@@ -79,20 +79,18 @@ setup_ansible_user() {
 configure_instancer() {
     local config_path="${CONFIG[DEPLOY_DIR]}/data/galvanize/config.yaml"
 
-    # Resolve the actual Docker network name: <project_name>_proxy
     local compose_project_name
     compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${CONFIG[DEPLOY_DIR]}/.env" 2>/dev/null \
         | head -n1 | cut -d= -f2- | tr -d "'\"\r")"
     compose_project_name="${compose_project_name:-ctfd_infra}"
     local docker_proxy_network="${compose_project_name}_proxy"
 
-    sed -i "s|your-secret-key-here|${CONFIG[JWT_SECRET_KEY]}|g"          "$config_path" # Setting up JWT
-    sed -i "s|your-ssh-user|$ANSIBLE_USER|g"                             "$config_path" # Setting up Ansible user
-    sed -i "s|your-server-ip,|${CONFIG[DOMAIN]},|g"                    "$config_path" # Setting up server IP / base domain
-    sed -i "s|challs.example.com|${CONFIG[DOMAIN]}|g"                  "$config_path" # Setting up public hostname of the deployer 
-    sed -i "s|localhost:6379|redis:6379|g"                               "$config_path" # Setting up redis connection for instancer
-    sed -i "s|example_param: \"example_value\"|traefik_network: \"${docker_proxy_network}\"|g" "$config_path" # Setting up traefik network
-
+    yq -i ".auth.jwt_secret = \"${CONFIG[JWT_SECRET_KEY]}\"" "$config_path"
+    yq -i ".instancer.ansible.user = \"${ANSIBLE_USER}\"" "$config_path"
+    yq -i ".instancer.ansible.inventory = \"${CONFIG[DOMAIN]},\"" "$config_path"
+    yq -i ".instancer.instancer_host = \"${CONFIG[DOMAIN]}\"" "$config_path"
+    yq -i ".instancer.redis.addr = \"redis:6379\"" "$config_path"
+    yq -i "del(.instancer.extra_deployment_parameters) | .instancer.extra_deployment_parameters.traefik_network = \"${docker_proxy_network}\"" "$config_path"
 
     log_success "Local instancer setup complete"
 }
