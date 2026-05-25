@@ -37,7 +37,12 @@ install_ctfd() {
     local docker_proxy_network="${compose_project_name}_proxy"
 
     local jwt_secret_key
-    jwt_secret_key="$(generate_password 48)"
+    jwt_secret_key="$(grep '^ZYNC_JWT_SECRET=' "$deploy_dir/.env" 2>/dev/null | head -n1 | cut -d= -f2-)"
+    if [[ -n "$jwt_secret_key" ]]; then
+        log_info "Existing JWT secret found — preserving it"
+    else
+        jwt_secret_key="$(generate_password 48)"
+    fi
     CONFIG[JWT_SECRET_KEY]="$jwt_secret_key"
 
     log_info "Installing CTFd..."
@@ -54,32 +59,26 @@ install_ctfd() {
     fi
     log_success "Instancer plugin configuration complete"
 
-    # ── Local instancer setup ──
-    # Skipped when --instancer-url (external) or --no-instancer is given.
-    local use_local_instancer="false"
-    if [[ -z "${CONFIG[INSTANCER_URL]:-}" && -z "${CONFIG[NO_INSTANCER]:-}" ]]; then
-        use_local_instancer="true"
-        local instancer_config_path="$deploy_dir/data/galvanize/config.yaml"
-        log_info "Setting up local instancer..."
+    # ── Generate or reuse secrets ──
+    local env_file="$deploy_dir/.env"
+    local secret_key db_password db_root_password
+    secret_key="$(grep '^SECRET_KEY=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2-)"
+    db_password="$(grep '^MARIADB_PASSWORD=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2-)"
+    db_root_password="$(grep '^MARIADB_ROOT_PASSWORD=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2-)"
 
-        log_info "Writing instancer config..."
-        mkdir -p "$deploy_dir/data/galvanize"
-        cp "$SCRIPT_DIR/config/galvanize/config.yaml" "$instancer_config_path"
-        chown -R 1000:1000 "$deploy_dir/data/galvanize"
+    # Only treat non-placeholder values as existing secrets
+    [[ "$secret_key" == "SecretKeyHere" ]] && secret_key=""
+    [[ "$db_password" == "SecretKeyHere" ]] && db_password=""
 
-        setup_env_key GALVANIZE_CONFIG_PATH "$instancer_config_path"
-
-        setup_instancer
+    if [[ -n "$secret_key" && -n "$db_password" && -n "$db_root_password" ]]; then
+        log_info "Existing secrets found in .env — preserving them"
+    else
+        log_info "Generating secure secrets..."
+        [[ -z "$secret_key" ]]        && secret_key="$(generate_password 32)"
+        [[ -z "$db_password" ]]       && db_password="$(generate_password 16)"
+        [[ -z "$db_root_password" ]]  && db_root_password="$(generate_password 16)"
     fi
 
-    # ── Generate secrets ──
-    log_info "Generating secure secrets..."
-    local secret_key db_password db_root_password
-    secret_key="$(generate_password 32)"
-    db_password="$(generate_password 16)"
-    db_root_password="$(generate_password 16)"
-
-    log_info "Updating configuration with new secrets..."
     setup_env_key SECRET_KEY            "$secret_key"
     setup_env_key MARIADB_PASSWORD      "$db_password"
     setup_env_key MARIADB_ROOT_PASSWORD "$db_root_password"
@@ -96,6 +95,23 @@ install_ctfd() {
     local instancer_url="${CONFIG[INSTANCER_URL]:-${scheme}://${CONFIG[DOMAIN]}:8080}"
     setup_env_key ZYNC_DEPLOYER_URL     "$instancer_url"
     setup_env_key ZYNC_JWT_SECRET       "$jwt_secret_key"
+
+    # ── Local instancer setup ──
+    # Skipped when --instancer-url (external) or --no-instancer is given.
+    local use_local_instancer="false"
+    if [[ -z "${CONFIG[INSTANCER_URL]:-}" && -z "${CONFIG[NO_INSTANCER]:-}" ]]; then
+        use_local_instancer="true"
+        local instancer_config_path="$deploy_dir/data/galvanize/config.yaml"
+        log_info "Setting up local instancer..."
+
+        mkdir -p "$deploy_dir/data/galvanize"
+        cp "$SCRIPT_DIR/config/galvanize/config.yaml" "$instancer_config_path"
+        chown -R 1000:1000 "$deploy_dir/data/galvanize"
+
+        setup_env_key GALVANIZE_CONFIG_PATH "$instancer_config_path"
+
+        setup_instancer
+    fi
 
     # ── Traefik config selection + CA auto-switch ──
     # Operate on DEPLOY_DIR copies — never touch tracked repo files
