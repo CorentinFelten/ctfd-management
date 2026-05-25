@@ -10,10 +10,11 @@ readonly _LIB_CTFD_CHALLENGE_LOADED=1
 ctfd_get_challenge_id_by_name() {
     local name="$1"
 
-    # Use view=admin so hidden/unlisted challenges are included, and per_page=500
-    # to avoid pagination truncating recently-created challenges from results.
+    local encoded_name
+    encoded_name="$(printf '%s' "$name" | jq -sRr @uri)"
+
     local response
-    response="$(ctfd_api_call GET "/api/v1/challenges?view=admin&per_page=500")" || return 1
+    response="$(ctfd_api_call GET "/api/v1/challenges?view=admin&q=${encoded_name}&field=name")" || return 1
 
     echo "$response" | jq -r --arg name "$name" '.data[] | select(.name == $name) | .id' 2>/dev/null | head -n1
 }
