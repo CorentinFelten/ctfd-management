@@ -37,8 +37,8 @@ show_status() {
             local ctype
             ctype="$(get_challenge_info "$yml" "type")"
             case "$ctype" in
-                docker) ((++docker_ct)) ;;
-                *)      ((++static_ct)) ;;
+                zync) ((++docker_ct)) ;;
+                *)    ((++static_ct)) ;;
             esac
             [[ -f "$compose" ]] && ((++compose_ct))
         done
