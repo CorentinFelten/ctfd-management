@@ -153,6 +153,9 @@ install_ctfd() {
         else
             log_success "TLS CA verified: production Let's Encrypt endpoint confirmed"
         fi
+
+        # Production: remove dashboard port (dashboard is disabled in production traefik.yml)
+        sed -i '/TRAEFIK_DASHBOARD_PORT.*9090/d' "$compose_file"
     fi
 
     mkdir -p "$deploy_dir/traefik-config/letsencrypt"
