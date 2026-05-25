@@ -26,6 +26,9 @@ https://download.docker.com/linux/${distro} $(lsb_release -cs) stable" \
     apt-get update -qq
     apt-get install -qq -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
+    systemctl enable docker
+    log_info "Docker service enabled to start on boot"
+
     if [[ -n "${SUDO_USER:-}" ]]; then
         usermod -aG docker "$SUDO_USER"
         log_info "Added $SUDO_USER to docker group"
