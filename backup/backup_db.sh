@@ -125,10 +125,10 @@ log_message "Step 2/2: Backing up CTFd uploads..."
 if [[ -d "${CTFD_UPLOADS_PATH}" ]]; then
     # Check if directory has content (avoid ls -A parsing issues)
     if compgen -G "${CTFD_UPLOADS_PATH}/*" > /dev/null 2>&1; then
-        tar -czf "${BACKUP_DIR}/ctfd_uploads.tar.gz" \
+        tar -cf "${BACKUP_DIR}/ctfd_uploads.tar" \
             -C "$(dirname "${CTFD_UPLOADS_PATH}")" \
             "$(basename "${CTFD_UPLOADS_PATH}")"
-        UPLOAD_SIZE="$(du -h "${BACKUP_DIR}/ctfd_uploads.tar.gz" | cut -f1)"
+        UPLOAD_SIZE="$(du -h "${BACKUP_DIR}/ctfd_uploads.tar" | cut -f1)"
         log_message "SUCCESS: CTFd uploads backed up (${UPLOAD_SIZE})"
     else
         log_message "INFO: Uploads directory is empty, skipping"
