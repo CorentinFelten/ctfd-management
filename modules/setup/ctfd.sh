@@ -45,7 +45,7 @@ install_ctfd() {
     local docker_proxy_network="${compose_project_name}_proxy"
 
     local jwt_secret_key
-    jwt_secret_key="$(grep '^ZYNC_JWT_SECRET=' "$deploy_dir/.env" 2>/dev/null | head -n1 | cut -d= -f2-)"
+    jwt_secret_key="$(grep '^ZYNC_JWT_SECRET=' "$deploy_dir/.env" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
     if [[ -n "$jwt_secret_key" ]]; then
         log_info "Existing JWT secret found — preserving it"
     else
@@ -70,9 +70,9 @@ install_ctfd() {
     # ── Generate or reuse secrets ──
     local env_file="$deploy_dir/.env"
     local secret_key db_password db_root_password
-    secret_key="$(grep '^SECRET_KEY=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2-)"
-    db_password="$(grep '^MARIADB_PASSWORD=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2-)"
-    db_root_password="$(grep '^MARIADB_ROOT_PASSWORD=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2-)"
+    secret_key="$(grep '^SECRET_KEY=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
+    db_password="$(grep '^MARIADB_PASSWORD=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
+    db_root_password="$(grep '^MARIADB_ROOT_PASSWORD=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
 
     # Only treat non-placeholder values as existing secrets
     [[ "$secret_key" == "SecretKeyHere" ]] && secret_key=""
