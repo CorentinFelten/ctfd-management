@@ -10,11 +10,15 @@ cleanup_docker() {
 
     local -a images=()
 
+    local -a compose_challenges=()
+
     local category challenge
     for category in "${CONFIG[CHALLENGE_PATH]}"/*; do
         [[ -d "$category" ]] || continue
         for challenge in "$category"/*; do
             [[ -d "$challenge" ]] || continue
+            should_process_challenge "$category" "$challenge" || continue
+
             local yml="$category/$(basename "$challenge")/challenge.yml"
             [[ -f "$yml" ]] || continue
 
@@ -25,9 +29,47 @@ cleanup_docker() {
                 img="$(get_challenge_info "$yml" "image")"
                 [[ -n "$img" ]] && images+=("$img")
             fi
+
+            [[ -f "$category/$(basename "$challenge")/docker-compose.yml" ]] \
+                && compose_challenges+=("$category/$(basename "$challenge")")
         done
     done
 
+    # ── Stop running compose stacks ──
+    if [[ ${#compose_challenges[@]} -gt 0 ]]; then
+        local all_running
+        all_running="$(docker ps --format '{{.Names}}' 2>/dev/null || true)"
+        local -a running_stacks=()
+
+        local cpath
+        for cpath in "${compose_challenges[@]}"; do
+            local cname
+            cname="$(basename "$cpath")"
+            if echo "$all_running" | grep -q "^${cname}"; then
+                running_stacks+=("$cpath")
+            fi
+        done
+
+        if [[ ${#running_stacks[@]} -gt 0 ]]; then
+            log_info "Found ${#running_stacks[@]} running compose stack(s)"
+            printf '  - %s\n' "${running_stacks[@]##*/}" >&2
+            read -rp "Stop these compose stacks? [Y/n] " -n 1 REPLY
+            echo >&2
+            if [[ -z "$REPLY" || $REPLY =~ ^[Yy]$ ]]; then
+                for cpath in "${running_stacks[@]}"; do
+                    if [[ "${CONFIG[DRY_RUN]}" == "false" ]]; then
+                        (cd "$cpath" && docker compose down 2>/dev/null) \
+                            && log_success "Stopped: $(basename "$cpath")" \
+                            || log_warning "Failed to stop: $(basename "$cpath")"
+                    else
+                        log_info "Would stop: docker compose down (in $(basename "$cpath"))"
+                    fi
+                done
+            fi
+        fi
+    fi
+
+    # ── Remove images ──
     if [[ ${#images[@]} -eq 0 ]]; then
         log_info "No challenge Docker images found"
         return 0
