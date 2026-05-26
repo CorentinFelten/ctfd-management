@@ -137,10 +137,14 @@ build_compose_stacks() {
     local max_par="${CONFIG[PARALLEL_BUILDS]}"
 
     if [[ "${CONFIG[DRY_RUN]}" == "false" && $max_par -gt 1 ]]; then
-        # ── Parallel ──
+        # ── Parallel (slot pool) ──
         local -a pids=() status_files=()
 
         for compose_file in "${compose_files[@]}"; do
+            if [[ ${#pids[@]} -ge $max_par ]]; then
+                _collect_one pids status_files ok fail failed_names
+            fi
+
             ((++current))
             log_info "[$current/$total] Starting compose build for $(basename "$(dirname "$compose_file")")"
 
@@ -149,12 +153,8 @@ build_compose_stacks() {
             _compose_single_quiet "$compose_file" "$sf" &
             pids+=($!)
             status_files+=("$sf")
-
-            if [[ ${#pids[@]} -ge $max_par ]]; then
-                _drain_parallel_batch pids status_files ok fail failed_names
-            fi
         done
-        _drain_parallel_batch pids status_files ok fail failed_names
+        _drain_all pids status_files ok fail failed_names
     else
         # ── Sequential ──
         for compose_file in "${compose_files[@]}"; do
@@ -290,34 +290,48 @@ _build_single_quiet() {
     fi
 }
 
-# ── Collect results from a batch of parallel status files ────────────────────
+# ── Collect one finished job from the pool (wait -n) ─────────────────────────
 
-_drain_parallel_batch() {
+_collect_one() {
     local -n _pids=$1
     local -n _files=$2
     local -n _ok=$3
     local -n _fail=$4
     local -n _failed_list=$5
 
+    wait -n "${_pids[@]}" 2>/dev/null || true
+
     local i
     for i in "${!_pids[@]}"; do
-        wait "${_pids[$i]}" || true
+        if ! kill -0 "${_pids[$i]}" 2>/dev/null; then
+            if [[ -f "${_files[$i]}" ]]; then
+                local result rname
+                result="$(cut -d: -f1  < "${_files[$i]}")"
+                rname="$(cut -d: -f2- < "${_files[$i]}")"
 
-        if [[ -f "${_files[$i]}" ]]; then
-            local result rname
-            result="$(cut -d: -f1  < "${_files[$i]}")"
-            rname="$(cut -d: -f2- < "${_files[$i]}")"
-
-            case "$result" in
-                SUCCESS) log_success "Image $rname successfully built"; ((++_ok)) ;;
-                FAIL)    log_error   "Docker build failed for image $rname"
-                         _failed_list+=("$rname"); ((++_fail)) ;;
-            esac
-            rm -f "${_files[$i]}"
+                case "$result" in
+                    SUCCESS) log_success "Image $rname successfully built"; ((++_ok)) ;;
+                    FAIL)    log_error   "Docker build failed for image $rname"
+                             _failed_list+=("$rname"); ((++_fail)) ;;
+                esac
+                rm -f "${_files[$i]}"
+            fi
+            unset '_pids[i]' '_files[i]'
+            return
         fi
     done
-    _pids=()
-    _files=()
+}
+
+_drain_all() {
+    local -n _pids=$1
+    local -n _files=$2
+    local -n _ok=$3
+    local -n _fail=$4
+    local -n _failed_list=$5
+
+    while [[ ${#_pids[@]} -gt 0 ]]; do
+        _collect_one "$1" "$2" "$3" "$4" "$5"
+    done
 }
 
 # ── Build all challenges ────────────────────────────────────────────────────
@@ -360,11 +374,15 @@ build_challenges() {
     local max_par="${CONFIG[PARALLEL_BUILDS]}"
 
     if [[ "${CONFIG[DRY_RUN]}" == "false" && $max_par -gt 1 ]]; then
-        # ── Parallel ──
+        # ── Parallel (slot pool) ──
         local -a pids=() status_files=()
 
         local info
         for info in "${to_build[@]}"; do
+            if [[ ${#pids[@]} -ge $max_par ]]; then
+                _collect_one pids status_files ok fail failed_names
+            fi
+
             IFS=$'\t' read -r category challenge <<< "$info"
             ((++current))
             log_info "[$current/$total] Starting build for $(basename "$challenge")"
@@ -374,12 +392,8 @@ build_challenges() {
             _build_single_quiet "$category" "$challenge" "$sf" &
             pids+=($!)
             status_files+=("$sf")
-
-            if [[ ${#pids[@]} -ge $max_par ]]; then
-                _drain_parallel_batch pids status_files ok fail failed_names
-            fi
         done
-        _drain_parallel_batch pids status_files ok fail failed_names
+        _drain_all pids status_files ok fail failed_names
     else
         # ── Sequential ──
         local info
