@@ -72,6 +72,4 @@ certificatesResolvers:
           - "1.1.1.1:53"
           - "8.8.8.8:53"
       storage: /etc/traefik/letsencrypt/acme.json
-      # ⚠ STAGING — switch to production before going live:
-      #   https://acme-v02.api.letsencrypt.org/directory
-      caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
+      caServer: "https://acme-v02.api.letsencrypt.org/directory"
