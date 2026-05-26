@@ -176,6 +176,16 @@ fi
 # Step 1: Restore MariaDB database
 # ============================================================================
 
+log_message "Creating safety dump of current database before restore..."
+SAFETY_DUMP="${BACKUP_BASE_DIR}/pre_restore_${DB_NAME}_$(date +%Y%m%d_%H%M%S).sql.gz"
+if docker exec -e MYSQL_PWD="${DB_ROOT_PASSWORD}" "${CONTAINER_NAME}" \
+    mysqldump -u root --single-transaction --quick --lock-tables=false "${DB_NAME}" \
+    | gzip > "$SAFETY_DUMP" 2>/dev/null; then
+    log_message "Safety dump saved to: $SAFETY_DUMP"
+else
+    log_message "WARNING: Could not create safety dump — proceeding anyway"
+fi
+
 log_message "Step 1/2: Restoring MariaDB database..."
 
 db_dump=""
@@ -221,9 +231,18 @@ fi
 
 log_message "Step 2/2: Restoring CTFd uploads..."
 
+UPLOADS_ARCHIVE=""
+if [[ -f "${BACKUP_DIR}/ctfd_uploads.tar" ]]; then
+    UPLOADS_ARCHIVE="${BACKUP_DIR}/ctfd_uploads.tar"
+    UPLOADS_TAR_FLAGS="-xf"
+elif [[ -f "${BACKUP_DIR}/ctfd_uploads.tar.gz" ]]; then
+    UPLOADS_ARCHIVE="${BACKUP_DIR}/ctfd_uploads.tar.gz"
+    UPLOADS_TAR_FLAGS="-xzf"
+fi
+
 if [[ -f "${BACKUP_DIR}/no_uploads.txt" ]]; then
     log_message "INFO: Backup contained no uploads, skipping"
-elif [[ -f "${BACKUP_DIR}/ctfd_uploads.tar.gz" ]]; then
+elif [[ -n "$UPLOADS_ARCHIVE" ]]; then
     # Backup existing uploads if they exist
     if [[ -d "${CTFD_UPLOADS_PATH}" ]] && compgen -G "${CTFD_UPLOADS_PATH}/*" >/dev/null 2>&1; then
         UPLOADS_BACKUP="${CTFD_UPLOADS_PATH}_backup_$(date +%Y%m%d_%H%M%S)"
@@ -236,7 +255,7 @@ elif [[ -f "${BACKUP_DIR}/ctfd_uploads.tar.gz" ]]; then
     log_message "  Extracting uploads..."
     mkdir -p "$(dirname "${CTFD_UPLOADS_PATH}")"
 
-    if tar --same-owner -xzf "${BACKUP_DIR}/ctfd_uploads.tar.gz" -C "$(dirname "${CTFD_UPLOADS_PATH}")"; then
+    if tar --same-owner ${UPLOADS_TAR_FLAGS} "${UPLOADS_ARCHIVE}" -C "$(dirname "${CTFD_UPLOADS_PATH}")"; then
         # Set appropriate permissions (not 755 — uploads should not be world-executable)
         find "${CTFD_UPLOADS_PATH}" -type d -exec chmod 750 {} \;
         find "${CTFD_UPLOADS_PATH}" -type f -exec chmod 640 {} \;
