@@ -17,7 +17,7 @@ services:
       - "traefik.http.services.ctfd.loadbalancer.server.port=8000"
     environment:
       - UPLOAD_FOLDER=/var/uploads
-      - DATABASE_URL=mysql+pymysql://db_user:${MARIADB_PASSWORD:?Set MARIADB_PASSWORD in .env}@maria-db/ctfd
+      - DATABASE_URL=mysql+pymysql://${MARIADB_USER:-db_user}:${MARIADB_PASSWORD:?Set MARIADB_PASSWORD in .env}@maria-db/ctfd
       - REDIS_URL=redis://redis:6379
       - WORKERS=4
       - LOG_FOLDER=/var/log/CTFd
