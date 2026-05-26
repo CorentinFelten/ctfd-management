@@ -28,5 +28,5 @@ read_env_value() {
             | grep -A0 "${key}" | head -n1 | sed 's/.*: //' | tr -d "'\"\r" || true)
     fi
 
-    echo "$value"
+    printf '%s' "$value"
 }
