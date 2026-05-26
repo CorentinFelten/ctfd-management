@@ -57,7 +57,7 @@ Options:
                                 ovh, gandiv5, gcloud, godaddy, namecheap, ionos
                                 Or any lego provider (https://go-acme.github.io/lego/dns/)
     -e, --acme-email EMAIL      Email address for Let's Encrypt certificates
-                                (default: admin@polycyber.io)
+                                (required for HTTPS deployments)
         --no-https              Disable HTTPS configuration for CTFd
                                 (automatically enabled for IP addresses)
     -h, --help                  Show this help message
@@ -141,6 +141,10 @@ parse_arguments() {
         log_info "Detected IP address in --domain, automatically enabling --no-https"
         CONFIG[NO_HTTPS]="true"
         CONFIG[DOCKER_ENV_FILE]="env.local"
+    fi
+
+    if [[ -z "${CONFIG[NO_HTTPS]:-}" && -z "${CONFIG[ACME_EMAIL]}" ]]; then
+        error_exit "Error: --acme-email is required for HTTPS deployments."
     fi
 }
 

@@ -57,7 +57,7 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 | `--instancer-url URL`    | Use an external Galvanize instancer instead of deploying one locally             | ❌ No    |
 | `--no-instancer`         | Skip Galvanize setup entirely (deploy it separately later)                       | ❌ No    |
 | `--dns-provider NAME`    | DNS provider for wildcard TLS certs (default: `cloudflare`)                      | ❌ No    |
-| `--acme-email EMAIL`     | Email address for Let's Encrypt certificates (default: `admin@polycyber.io`)     | ❌ No    |
+| `--acme-email EMAIL`     | Email address for Let's Encrypt certificates (required for HTTPS)                | ✅ HTTPS |
 | `--no-https`             | Deployment without HTTPS (automatically enabled for IP addresses)                | ❌ No    |
 | `--help`                 | Display help                                                                     | ❌ No    |
 
@@ -67,7 +67,7 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 
 ```bash
 # Basic installation with domain (includes local Galvanize instancer by default)
-./setup.sh --domain example.com
+./setup.sh --domain example.com --acme-email admin@example.com
 
 # Basic installation with IP address - automatically uses the --no-https option
 ./setup.sh --domain 192.168.123.123

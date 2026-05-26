@@ -188,9 +188,9 @@ install_ctfd() {
     sed -i "s|__DNS_PROVIDER__|${dns_provider}|g" "$traefik_cfg"
     setup_env_key DNS_PROVIDER "$dns_provider"
 
-    local acme_email="${CONFIG[ACME_EMAIL]:-admin@polycyber.io}"
+    local acme_email="${CONFIG[ACME_EMAIL]}"
     log_info "Setting ACME email to: $acme_email"
-    sed -i "s|email:.*|email: ${acme_email}|" "$traefik_cfg"
+    sed -i "s|__ACME_EMAIL__|${acme_email}|g" "$traefik_cfg"
     setup_env_key ACME_EMAIL "$acme_email"
 
     log_success "Traefik wildcard TLS configuration complete (domain: $domain, provider: $dns_provider)"

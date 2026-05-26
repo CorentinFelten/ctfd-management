@@ -57,7 +57,7 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 | `--instancer-url URL`    | Utiliser un instancer Galvanize externe plutôt que d'en déployer un localement            | ❌ Non   |
 | `--no-instancer`         | Ignorer la configuration de Galvanize (le déployer séparément plus tard)                  | ❌ Non   |
 | `--dns-provider NAME`    | Fournisseur DNS pour les certificats TLS wildcard (défaut : `cloudflare`)                 | ❌ Non   |
-| `--acme-email EMAIL`     | Adresse email pour les certificats Let's Encrypt (défaut : `admin@polycyber.io`)          | ❌ Non   |
+| `--acme-email EMAIL`     | Adresse email pour les certificats Let's Encrypt (requis pour HTTPS)                      | ✅ HTTPS |
 | `--no-https`             | Déploiement sans HTTPS (activé automatiquement pour les adresses IP)                     | ❌ Non   |
 | `--help`                 | Afficher l'aide                                                                           | ❌ Non   |
 
@@ -67,7 +67,7 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 
 ```bash
 # Installation basique avec domaine (inclut l'instancer Galvanize local par défaut)
-./setup.sh --domain exemple.com
+./setup.sh --domain exemple.com --acme-email admin@exemple.com
 
 # Installation basique avec une IP - utilise automatiquement l'option --no-https
 ./setup.sh --domain 192.168.123.123

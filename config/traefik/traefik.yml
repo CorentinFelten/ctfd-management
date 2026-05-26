@@ -64,7 +64,7 @@ entryPoints:
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: admin@polycyber.io
+      email: "__ACME_EMAIL__"
       # Set DNS_PROVIDER and its credentials in .env (see README).
       dnsChallenge:
         provider: "__DNS_PROVIDER__"
