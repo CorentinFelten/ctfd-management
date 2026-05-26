@@ -345,7 +345,7 @@ build_challenges() {
                     local cplaybook
                     cplaybook="$(get_challenge_info "$yml" "playbook_name")"
                     if [[ "$cplaybook" != "custom_compose" ]]; then
-                        to_build+=("$category:$challenge")
+                        to_build+=("${category}	${challenge}")
                         ((++total))
                     fi
                 fi
@@ -365,7 +365,7 @@ build_challenges() {
 
         local info
         for info in "${to_build[@]}"; do
-            IFS=':' read -r category challenge <<< "$info"
+            IFS=$'\t' read -r category challenge <<< "$info"
             ((++current))
             log_info "[$current/$total] Starting build for $(basename "$challenge")"
 
@@ -384,7 +384,7 @@ build_challenges() {
         # ── Sequential ──
         local info
         for info in "${to_build[@]}"; do
-            IFS=':' read -r category challenge <<< "$info"
+            IFS=$'\t' read -r category challenge <<< "$info"
             ((++current))
             log_info "[$current/$total] Starting build for $(basename "$challenge")"
 
