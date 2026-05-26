@@ -143,7 +143,7 @@ deploy/
 | `ingest`  | Ingest challenges into CTFd     |
 | `sync`    | Synchronize existing challenges |
 | `status`  | Display status and statistics   |
-| `cleanup` | Clean up Docker images          |
+| `cleanup` | Stop compose stacks and clean up Docker images (respects `--categories`/`--challenges` filters) |
 
 ## Main Options
 
