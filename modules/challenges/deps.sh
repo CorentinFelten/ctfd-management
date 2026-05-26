@@ -19,7 +19,13 @@ check_dependencies() {
         log_debug "Checking Docker daemon..."
         if ! timeout 10 docker info &>/dev/null; then
             log_warning "Docker daemon is not running or not accessible"
-            log_warning "You may need to start Docker or check permissions"
+            if id -nG 2>/dev/null | grep -qw docker; then
+                log_warning "You are in the docker group — the daemon may not be running"
+                log_warning "Try: sudo systemctl start docker"
+            else
+                log_warning "Your session does not have docker group membership"
+                log_warning "Log out and back in, or run: newgrp docker"
+            fi
             log_warning "Use --skip-docker-check to bypass this check"
             error_exit "Docker daemon check failed"
         fi
