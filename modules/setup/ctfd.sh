@@ -16,14 +16,22 @@ install_ctfd() {
     # ── Copy config templates from repo to deploy dir ──
     log_info "Setting up deployment directory: $deploy_dir"
     mkdir -p "$deploy_dir"
+
+    if [[ -f "$deploy_dir/docker-compose.yml" ]]; then
+        local backup_suffix="backup_$(date +%Y%m%d_%H%M%S)"
+        log_info "Existing deployment detected — backing up config files"
+        [[ -d "$deploy_dir/traefik-config" ]] && cp -r "$deploy_dir/traefik-config" "$deploy_dir/traefik-config.${backup_suffix}"
+        [[ -d "$deploy_dir/ctfd" ]]           && cp -r "$deploy_dir/ctfd" "$deploy_dir/ctfd.${backup_suffix}"
+        cp "$deploy_dir/docker-compose.yml" "$deploy_dir/docker-compose.yml.${backup_suffix}"
+        log_success "Backed up existing configs with suffix: $backup_suffix"
+    fi
+
     cp -r "$SCRIPT_DIR/config/traefik" "$deploy_dir/traefik-config"
     cp -r "$SCRIPT_DIR/config/ctfd"    "$deploy_dir/ctfd"
     cp    "$SCRIPT_DIR/config/docker-compose.yml" "$deploy_dir/docker-compose.yml"
     chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$deploy_dir"
-    # Re-apply CTFd container ownership after the broad chown above.
-    # CTFd runs as UID 1001 and must own its data directories.
-    chown -R 1001:1001 "$deploy_dir/data/CTFd/uploads"
-    chown -R 1001:1001 "$deploy_dir/data/CTFd/logs"
+    [[ -d "$deploy_dir/data/CTFd/uploads" ]] && chown -R 1001:1001 "$deploy_dir/data/CTFd/uploads"
+    [[ -d "$deploy_dir/data/CTFd/logs" ]]    && chown -R 1001:1001 "$deploy_dir/data/CTFd/logs"
     log_success "Config templates copied to deploy dir"
 
     local compose_file="$deploy_dir/docker-compose.yml"
