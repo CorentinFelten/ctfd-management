@@ -207,6 +207,29 @@ install_ctfd() {
     "${compose_cmd[@]}" pull -q
     log_success "Docker images successfully pulled"
 
+    # ── Extract playbooks from galvanize image ──
+    if [[ "$use_local_instancer" == "true" ]]; then
+        local playbooks_dir="$deploy_dir/data/galvanize/playbooks"
+        if [[ ! -d "$playbooks_dir" ]] || [[ -z "$(ls -A "$playbooks_dir" 2>/dev/null)" ]]; then
+            log_info "Extracting playbooks from galvanize image..."
+            mkdir -p "$playbooks_dir"
+            local galvanize_image
+            galvanize_image="$(yq '.services.instancer.image' "$compose_file" 2>/dev/null)"
+            if [[ -n "$galvanize_image" && "$galvanize_image" != "null" ]]; then
+                docker create --name galvanize-extract "$galvanize_image" >/dev/null 2>&1
+                docker cp galvanize-extract:/app/data/playbooks/. "$playbooks_dir/" 2>/dev/null \
+                    && log_success "Playbooks extracted to: $playbooks_dir" \
+                    || log_warning "Could not extract playbooks from galvanize image"
+                docker rm galvanize-extract >/dev/null 2>&1
+                chown -R 1000:1000 "$playbooks_dir"
+            else
+                log_warning "Could not determine galvanize image name — skipping playbook extraction"
+            fi
+        else
+            log_info "Playbooks directory already populated, skipping extraction"
+        fi
+    fi
+
     # ── Custom theme ──
     if [[ -n "${CONFIG[THEME]}" ]]; then
         log_info "Custom theme option enabled"
