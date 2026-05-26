@@ -173,6 +173,9 @@ main() {
 # ── Entry point: root escalation first ───────────────────────────────────────
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    for _arg in "$@"; do
+        [[ "$_arg" == "-h" || "$_arg" == "--help" ]] && { show_usage; exit 0; }
+    done
     if [[ $EUID -ne 0 ]]; then
         echo "This script must be run as root. Re-executing with sudo..." >&2
         exec sudo -- bash "$0" "$@"
