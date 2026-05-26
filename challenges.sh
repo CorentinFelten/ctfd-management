@@ -185,24 +185,29 @@ main() {
     check_ctfd_api_deps
     get_challenges_path
 
+    local has_failures=false
+
     case "${CONFIG[ACTION]}" in
         all)
-            local build_ok=true
-            build_challenges || build_ok=false
-            [[ "$build_ok" == "false" ]] \
+            build_challenges   || has_failures=true
+            [[ "$has_failures" == "true" ]] \
                 && log_warning "Some builds failed — continuing with ingestion for successfully built challenges"
             initialize_ctfd_config
-            ingest_challenges
+            ingest_challenges  || has_failures=true
             ;;
-        build)   build_challenges   ;;
-        ingest)  initialize_ctfd_config; ingest_challenges ;;
-        sync)    initialize_ctfd_config; sync_challenges    ;;
+        build)   build_challenges   || has_failures=true ;;
+        ingest)  initialize_ctfd_config; ingest_challenges || has_failures=true ;;
+        sync)    initialize_ctfd_config; sync_challenges   || has_failures=true ;;
         status)  show_status        ;;
         cleanup) cleanup_docker     ;;
         *)       error_exit "Unknown action: ${CONFIG[ACTION]}" ;;
     esac
 
-    log_success "Operation completed successfully!"
+    if [[ "$has_failures" == "true" ]]; then
+        log_warning "Operation completed with errors (see above)"
+    else
+        log_success "Operation completed successfully!"
+    fi
     mark_completed
 }
 

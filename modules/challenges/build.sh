@@ -142,7 +142,7 @@ build_compose_stacks() {
 
         for compose_file in "${compose_files[@]}"; do
             ((++current))
-            log_info "[$current/$total] Starting compose build for $(dirname "$compose_file" | xargs basename)"
+            log_info "[$current/$total] Starting compose build for $(basename "$(dirname "$compose_file")")"
 
             local sf
             sf="$(mktemp "/tmp/ctf_status_compose_$(basename "$(dirname "$compose_file")")_XXXXXX.txt")"
@@ -159,7 +159,7 @@ build_compose_stacks() {
         # ── Sequential ──
         for compose_file in "${compose_files[@]}"; do
             ((++current))
-            log_info "[$current/$total] Starting compose build for $(dirname "$compose_file" | xargs basename)"
+            log_info "[$current/$total] Starting compose build for $(basename "$(dirname "$compose_file")")"
 
             if _compose_single "$compose_file"; then
                 ((++ok))
