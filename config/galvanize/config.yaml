@@ -29,6 +29,5 @@ instancer:
   default_resource_limits: # Default container resource limits applied to all deployments (can be overridden per challenge)
     cpus: "1"             # CPU limit per container (e.g. "0.5", "1", "2")
     memory: "512M"        # Memory limit per container (e.g. "256M", "512M", "1G")
-    pids_limit: 256       # Max number of PIDs per container (fork bomb protection)
   extra_deployment_parameters: # Additional parameters for deployment (added to vars in Ansible)
     example_param: "example_value"
