@@ -6,30 +6,34 @@
 readonly _SETUP_BACKUP_LOADED=1
 
 setup_backup_script() {
-    local backup_script="$SCRIPT_DIR/backup/backup_db.sh"
+    local deploy_backup_dir="${CONFIG[DEPLOY_DIR]}/backup"
+    local src_dir="$SCRIPT_DIR/backup"
 
-    log_info "Setting up database backup script..."
+    log_info "Setting up database backup scripts..."
 
-    if [[ ! -f "$backup_script" ]]; then
-        log_error "Backup script not found at: $backup_script"
+    if [[ ! -f "$src_dir/backup_db.sh" ]]; then
+        log_error "Backup script not found at: $src_dir/backup_db.sh"
         log_warning "Skipping backup script setup"
         return 1
     fi
 
-    chmod +x "$backup_script"
-    chown "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$backup_script"
+    mkdir -p "$deploy_backup_dir"
 
-    local restore_script="$SCRIPT_DIR/backup/restore_db.sh"
-    if [[ -f "$restore_script" ]]; then
-        chmod +x "$restore_script"
-        chown "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$restore_script"
-    fi
+    local f
+    for f in backup_db.sh restore_db.sh common.sh; do
+        if [[ -f "$src_dir/$f" ]]; then
+            cp "$src_dir/$f" "$deploy_backup_dir/$f"
+            chmod +x "$deploy_backup_dir/$f"
+        fi
+    done
 
-    log_success "Backup scripts setup at: $(dirname "$backup_script")/"
+    chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$deploy_backup_dir"
+
+    log_success "Backup scripts deployed to: $deploy_backup_dir/"
 }
 
 setup_backup_cron() {
-    local backup_script="$SCRIPT_DIR/backup/backup_db.sh"
+    local backup_script="${CONFIG[DEPLOY_DIR]}/backup/backup_db.sh"
     local cron_log="${CONFIG[DEPLOY_DIR]}/cron_backup.log"
     local user="${SUDO_USER:-$USER}"
     local schedule="${CONFIG[BACKUP_SCHEDULE]}"
