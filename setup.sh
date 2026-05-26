@@ -167,6 +167,7 @@ main() {
     setup_backup_cron
 
     log_success "CTFd server setup completed successfully!"
+    mark_completed
 }
 
 # ── Entry point: root escalation first ───────────────────────────────────────

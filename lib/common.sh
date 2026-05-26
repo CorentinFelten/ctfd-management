@@ -40,19 +40,31 @@ log_debug() {
 
 error_exit() {
     log_error "$1"
+    _SCRIPT_COMPLETED=true
     exit "${2:-1}"
 }
 
 # ── Cleanup trap ─────────────────────────────────────────────────────────────
 
 _cleanup_files=()
+_SCRIPT_COMPLETED=false
+
+mark_completed() { _SCRIPT_COMPLETED=true; }
 
 _run_cleanup() {
+    local exit_code=$?
     local f
     for f in "${_cleanup_files[@]}"; do
         rm -rf "$f" 2>/dev/null || true
     done
     rm -f /tmp/ctf_build_*.log /tmp/ctf_status_*.txt 2>/dev/null || true
+
+    if [[ "$_SCRIPT_COMPLETED" != "true" && $exit_code -ne 0 ]]; then
+        printf '\n%b[FATAL]%b Script exited unexpectedly (exit code %d).\n' \
+            "$RED" "$NC" "$exit_code" >&2
+        printf '%b[FATAL]%b Last executed near: %s\n' \
+            "$RED" "$NC" "${BASH_COMMAND:-unknown}" >&2
+    fi
 }
 trap _run_cleanup EXIT INT TERM
 

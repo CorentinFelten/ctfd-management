@@ -203,6 +203,7 @@ main() {
     esac
 
     log_success "Operation completed successfully!"
+    mark_completed
 }
 
 # ── Entry point ──────────────────────────────────────────────────────────────
