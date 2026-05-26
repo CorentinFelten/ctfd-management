@@ -170,7 +170,7 @@ main() {
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     if [[ $EUID -ne 0 ]]; then
         echo "This script must be run as root. Re-executing with sudo..." >&2
-        exec sudo bash "$0" "$@"
+        exec sudo -- bash "$0" "$@"
     fi
     parse_arguments "$@"
     main
