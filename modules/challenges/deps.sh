@@ -6,9 +6,12 @@
 readonly _CHALL_DEPS_LOADED=1
 
 check_dependencies() {
+    local action="${CONFIG[ACTION]:-all}"
     log_info "Checking dependencies..."
 
-    if [[ "${CONFIG[SKIP_DOCKER_CHECK]}" == "false" ]]; then
+    if [[ "$action" == "ingest" || "$action" == "sync" ]]; then
+        log_debug "Skipping Docker check (not needed for $action)"
+    elif [[ "${CONFIG[SKIP_DOCKER_CHECK]}" == "false" ]]; then
         log_debug "Checking Docker installation..."
         command -v docker &>/dev/null \
             || error_exit "Docker is not installed or not in PATH"
@@ -37,8 +40,14 @@ check_dependencies() {
 }
 
 check_ctfd_api_deps() {
+    local action="${CONFIG[ACTION]:-all}"
+    if [[ "$action" == "build" || "$action" == "cleanup" ]]; then
+        log_debug "Skipping CTFd API deps check (not needed for $action)"
+        return 0
+    fi
+
     log_info "Checking CTFd API dependencies..."
-    
+
     local missing_deps=()
     
     # Check for curl (required for API calls)
