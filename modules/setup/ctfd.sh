@@ -229,6 +229,9 @@ install_ctfd() {
     "${compose_cmd[@]}" up -d
     log_success "CTFd containers started successfully"
     log_success "CTFd installation complete!"
+    log_info ""
+    log_info "CTFd is now available at: ${ctfd_full_url}"
+    log_info ""
 
     # ── Write secrets to secured file (in deploy dir, not the repo) ──
     local secrets_file="${deploy_dir}/.secrets"
