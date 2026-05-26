@@ -61,34 +61,34 @@ Enhanced CTF Challenge Management Tool v${VERSION}
 Usage: $SCRIPT_NAME [OPTIONS]
 
 ACTIONS:
-    --action ACTION         Action to perform: all, build, ingest, sync, status, cleanup (default: all)
+    -a, --action ACTION         Action to perform: all, build, ingest, sync, status, cleanup (default: all)
 
 MAIN OPTIONS:
-    --working-folder DIR    Set working directory (default: /home/\$USER)
-    --repo REPO         Challenge repository — resolved in this priority order:
-                              1. Folder name inside --working-folder (e.g. "MyCTF-Challenges")
-                              2. Folder name inside <working-folder>/deploy/data/galvanize/challenges/
-                              3. Git URL — cloned to --working-folder, or to
-                                 <working-folder>/deploy/data/galvanize/challenges/ when galvanize
-                                 is configured there (detected automatically)
-                              4. Absolute or relative path to any existing folder
-    --git-branch BRANCH     Git branch/tag to checkout after cloning (optional)
-    --config FILE           Load configuration from file
+    -w, --working-folder DIR    Set working directory (default: /home/\$USER)
+    -r, --repo REPO         Challenge repository — resolved in this priority order:
+                                  1. Folder name inside --working-folder (e.g. "MyCTF-Challenges")
+                                  2. Folder name inside <working-folder>/deploy/data/galvanize/challenges/
+                                  3. Git URL — cloned to --working-folder, or to
+                                     <working-folder>/deploy/data/galvanize/challenges/ when galvanize
+                                     is configured there (detected automatically)
+                                  4. Absolute or relative path to any existing folder
+    -b, --git-branch BRANCH     Git branch/tag to checkout after cloning (optional)
+    -f, --config FILE           Load configuration from file
 
 FILTERING OPTIONS:
-    --categories LIST       Comma-separated list of categories to process
-    --challenges LIST       Comma-separated list of specific challenges to process
+    -c, --categories LIST       Comma-separated list of categories to process
+    -C, --challenges LIST       Comma-separated list of specific challenges to process
 
 BEHAVIOR OPTIONS:
-    --dry-run               Show what would be done without executing
-    --force                 Force operations (rebuild images, overwrite challenges)
-    --parallel-builds N     Number of parallel Docker builds (default: 4)
+    -n, --dry-run               Show what would be done without executing
+    -F, --force                 Force operations (rebuild images, overwrite challenges)
+    -P, --parallel-builds N     Number of parallel Docker builds (default: 4)
 
 DEBUGGING:
-    --debug                 Enable debug output
-    --skip-docker-check     Skip Docker daemon availability check
-    --help                  Show this help message
-    --version               Show version information
+    -D, --debug                 Enable debug output
+        --skip-docker-check     Skip Docker daemon availability check
+    -h, --help                  Show this help message
+    -v, --version               Show version information
 
 EXAMPLES:
   # Folder already present in working dir
@@ -130,41 +130,41 @@ show_version() {
 parse_arguments() {
     while [[ $# -gt 0 ]]; do
         case $1 in
-            --working-folder)
+            -w|--working-folder)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --working-folder"
                 CONFIG[WORKING_DIR]="$2"; shift 2 ;;
-            --repo)
+            -r|--repo)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --repo"
                 CONFIG[REPO]="$2"; shift 2 ;;
-            --git-branch)
+            -b|--git-branch)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --git-branch"
                 CONFIG[GIT_BRANCH]="$2"; shift 2 ;;
-            --action)
+            -a|--action)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --action"
                 case "$2" in
                     all|build|ingest|sync|status|cleanup) CONFIG[ACTION]="$2" ;;
                     *) error_exit "Invalid action: $2. Valid: all, build, ingest, sync, status, cleanup" ;;
                 esac
                 shift 2 ;;
-            --categories)
+            -c|--categories)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --categories"
                 CONFIG[CATEGORIES]="$2"; shift 2 ;;
-            --challenges)
+            -C|--challenges)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --challenges"
                 CONFIG[CHALLENGES]="$2"; shift 2 ;;
-            --parallel-builds)
+            -P|--parallel-builds)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --parallel-builds"
                 [[ "$2" =~ ^[0-9]+$ ]] || error_exit "Invalid number for --parallel-builds: $2"
                 CONFIG[PARALLEL_BUILDS]="$2"; shift 2 ;;
-            --config)
+            -f|--config)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --config"
                 CONFIG[CONFIG_FILE]="$2"; shift 2 ;;
-            --dry-run)           CONFIG[DRY_RUN]="true";         shift ;;
-            --force)             CONFIG[FORCE]="true";           shift ;;
-            --debug)             CONFIG[DEBUG]="true"; _DEBUG="true"; shift ;;
+            -n|--dry-run)        CONFIG[DRY_RUN]="true";         shift ;;
+            -F|--force)          CONFIG[FORCE]="true";           shift ;;
+            -D|--debug)          CONFIG[DEBUG]="true"; _DEBUG="true"; shift ;;
             --skip-docker-check) CONFIG[SKIP_DOCKER_CHECK]="true"; shift ;;
-            --help)    show_usage;   exit 0 ;;
-            --version) show_version        ;;
+            -h|--help)    show_usage;   exit 0 ;;
+            -v|--version) show_version        ;;
             *)         error_exit "Unknown parameter: $1" ;;
         esac
     done

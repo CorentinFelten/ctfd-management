@@ -45,22 +45,22 @@ show_usage() {
 Usage: $SCRIPT_NAME [OPTIONS]
 
 Options:
-    --domain URL          Set CTFd URL (mandatory)
-                            Note: IP addresses automatically enable --no-https
-    --working-folder DIR    Set working directory (default: /home/\$USER)
-    --theme PATH_OR_URL     Path to local theme folder or Git URL to clone
-    --backup-schedule TYPE  Set backup schedule: daily, hourly, or 10min (default: daily)
-    --instancer-url URL     Use an external Galvanize instancer (skips local setup)
-    --no-instancer          Skip Galvanize setup entirely (deploy it separately later)
-    --dns-provider NAME     DNS provider for wildcard TLS certs (default: cloudflare)
-                            Supported: cloudflare, route53, digitalocean, hetzner,
-                            ovh, gandiv5, gcloud, godaddy, namecheap, ionos
-                            Or any lego provider (https://go-acme.github.io/lego/dns/)
-    --acme-email EMAIL      Email address for Let's Encrypt certificates
-                            (default: admin@polycyber.io)
-    --no-https              Disable HTTPS configuration for CTFd
-                            (automatically enabled for IP addresses)
-    --help                  Show this help message
+    -d, --domain URL          Set CTFd URL (mandatory)
+                                Note: IP addresses automatically enable --no-https
+    -w, --working-folder DIR    Set working directory (default: /home/\$USER)
+    -t, --theme PATH_OR_URL     Path to local theme folder or Git URL to clone
+    -b, --backup-schedule TYPE  Set backup schedule: daily, hourly, or 10min (default: daily)
+    -i, --instancer-url URL     Use an external Galvanize instancer (skips local setup)
+        --no-instancer          Skip Galvanize setup entirely (deploy it separately later)
+    -p, --dns-provider NAME     DNS provider for wildcard TLS certs (default: cloudflare)
+                                Supported: cloudflare, route53, digitalocean, hetzner,
+                                ovh, gandiv5, gcloud, godaddy, namecheap, ionos
+                                Or any lego provider (https://go-acme.github.io/lego/dns/)
+    -e, --acme-email EMAIL      Email address for Let's Encrypt certificates
+                                (default: admin@polycyber.io)
+        --no-https              Disable HTTPS configuration for CTFd
+                                (automatically enabled for IP addresses)
+    -h, --help                  Show this help message
 
 Directory structure:
     <working-folder>/deploy/                          Deployment working directory (configs, .env, compose)
@@ -88,38 +88,38 @@ EOF
 parse_arguments() {
     while [[ $# -gt 0 ]]; do
         case $1 in
-            --domain)
+            -d|--domain)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --domain"
                 CONFIG[DOMAIN]="$2"; shift 2 ;;
-            --working-folder)
+            -w|--working-folder)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --working-folder"
                 CONFIG[WORKING_DIR]="$2"; shift 2 ;;
-            --theme)
+            -t|--theme)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --theme"
                 CONFIG[THEME]="$2"; shift 2 ;;
-            --backup-schedule)
+            -b|--backup-schedule)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --backup-schedule"
                 case ${2,,} in
                     daily|hourly|10min) CONFIG[BACKUP_SCHEDULE]="${2,,}" ;;
                     *) error_exit "Invalid backup schedule: $2. Must be: daily, hourly, or 10min" ;;
                 esac
                 shift 2 ;;
-            --instancer-url)
+            -i|--instancer-url)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --instancer-url"
                 CONFIG[INSTANCER_URL]="$2"; shift 2 ;;
             --no-instancer)
                 CONFIG[NO_INSTANCER]="true"; shift ;;
-            --dns-provider)
+            -p|--dns-provider)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --dns-provider"
                 CONFIG[DNS_PROVIDER]="$2"; shift 2 ;;
-            --acme-email)
+            -e|--acme-email)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --acme-email"
                 CONFIG[ACME_EMAIL]="$2"; shift 2 ;;
             --no-https)
                 CONFIG[NO_HTTPS]="true"
                 CONFIG[DOCKER_ENV_FILE]="env.local"
                 shift ;;
-            --help) show_usage; exit 0 ;;
+            -h|--help) show_usage; exit 0 ;;
             *)      error_exit "Unknown parameter: $1" ;;
         esac
     done
