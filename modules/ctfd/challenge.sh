@@ -314,3 +314,37 @@ ctfd_sync_challenge() {
         log_warning "Some files failed to re-upload for: $name"
     return 0
 }
+
+# ── Sync only a challenge's requirements (second pass) ────────────────────────
+
+# ctfd_sync_challenge_requirements CHALLENGE_PATH
+#   Resolves and sets the challenge's prerequisites. Run after every challenge
+#   has been synced, so a named prerequisite is guaranteed to exist in CTFd.
+ctfd_sync_challenge_requirements() {
+    local challenge_path="$1"
+    local yml_file="$challenge_path/challenge.yml"
+
+    [[ -f "$yml_file" ]] || {
+        log_error "challenge.yml not found in: $challenge_path"
+        return 1
+    }
+
+    local challenge_data
+    challenge_data="$(parse_challenge_yaml "$yml_file")" || return 1
+
+    local name
+    name="$(echo "$challenge_data" | jq -r '.name // empty')"
+    [[ -n "$name" ]] || { log_error "Challenge name is required"; return 1; }
+
+    local challenge_id
+    challenge_id="$(ctfd_get_challenge_id_by_name "$name")" || {
+        log_error "Challenge '$name' not found in CTFd while setting requirements"
+        return 1
+    }
+    [[ -n "$challenge_id" && "$challenge_id" != "null" ]] || {
+        log_error "Challenge '$name' not found in CTFd while setting requirements"
+        return 1
+    }
+
+    ctfd_sync_requirements "$challenge_data" "$challenge_id"
+}

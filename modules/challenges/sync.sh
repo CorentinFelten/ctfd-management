@@ -8,8 +8,8 @@ readonly _CHALL_SYNC_LOADED=1
 sync_challenges() {
     log_info "Syncing existing challenges..."
 
-    local synced=0 fail=0
-    local -a failed_names=() to_sync=()
+    local synced=0 fail=0 req_fail=0
+    local -a failed_names=() to_sync=() req_failed_names=()
 
     local category challenge
     for category in "${CONFIG[CHALLENGE_PATH]}"/*; do
@@ -52,6 +52,23 @@ sync_challenges() {
         fi
     done
 
+    # ── Pass 2: requirements ──
+    # Now that every challenge is present in CTFd, wire up prerequisites. Done
+    # separately from the payload sync so name→ID resolution never fails on a
+    # prerequisite that hasn't been synced yet — order-independent by design.
+    if [[ "${CONFIG[DRY_RUN]}" == "true" ]]; then
+        log_info "Would resolve challenge requirements (pass 2)"
+    else
+        log_info "Resolving challenge requirements..."
+        for path in "${to_sync[@]}"; do
+            local cname="$(basename "$path")"
+            ctfd_sync_challenge_requirements "$path" || {
+                log_error "Failed to set requirements for: $cname"
+                req_failed_names+=("$cname"); ((++req_fail))
+            }
+        done
+    fi
+
     # Summary
     log_info    "Challenge sync summary:"
     log_success "Successfully synced: $synced/${#to_sync[@]} challenges"
@@ -60,6 +77,15 @@ sync_challenges() {
         log_warning "Failed to sync: $fail/${#to_sync[@]} challenges"
         log_warning "Failed challenges:"
         printf '  - %s\n' "${failed_names[@]}" >&2
+    fi
+
+    if [[ $req_fail -gt 0 ]]; then
+        log_warning "Failed to set requirements: $req_fail/${#to_sync[@]} challenges"
+        log_warning "Requirements failures:"
+        printf '  - %s\n' "${req_failed_names[@]}" >&2
+    fi
+
+    if [[ $fail -gt 0 || $req_fail -gt 0 ]]; then
         return 1
     fi
 

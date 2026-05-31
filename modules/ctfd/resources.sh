@@ -323,40 +323,54 @@ ctfd_preflight_requirements() {
 
 # ── Requirements ─────────────────────────────────────────────────────────────
 
-ctfd_add_requirements() {
+# _ctfd_resolve_requirement_ids CHALLENGE_DATA CHALLENGE_ID
+#   Resolves the challenge's declared requirements (numeric IDs taken as-is,
+#   string names resolved by lookup) and echoes a compact JSON array of numeric
+#   IDs. Echoes "[]" when no requirements are declared. Returns 1 on an API
+#   error, or when a named requirement cannot be found, or when a self-reference
+#   is detected.
+_ctfd_resolve_requirement_ids() {
     local challenge_data="$1" challenge_id="$2"
 
     local requirements_json
     requirements_json="$(echo "$challenge_data" | jq -c '.requirements // []')"
-    [[ "$requirements_json" == "[]" || "$requirements_json" == "null" ]] && return 0
-
-    log_debug "Resolving requirements..."
+    if [[ "$requirements_json" == "[]" || "$requirements_json" == "null" ]]; then
+        echo "[]"
+        return 0
+    fi
 
     local -a prereq_ids=()
 
     while IFS= read -r req_entry; do
         [[ -z "$req_entry" || "$req_entry" == "null" ]] && continue
 
+        local resolved_id
         if echo "$req_entry" | jq -e 'type == "number"' >/dev/null 2>&1; then
             # Already a numeric ID
-            prereq_ids+=("$(echo "$req_entry" | jq -r '.')")
+            resolved_id="$(echo "$req_entry" | jq -r '.')"
         else
             # String name → resolve to ID; do NOT suppress errors or swallow failures
-            local req_name resolved_id
+            local req_name
             req_name="$(echo "$req_entry" | jq -r '.')"
             resolved_id="$(ctfd_get_challenge_id_by_name "$req_name")" || {
                 log_error "API error while resolving requirement '$req_name' for challenge ID $challenge_id"
                 return 1
             }
 
-            if [[ -n "$resolved_id" && "$resolved_id" != "null" ]]; then
-                prereq_ids+=("$resolved_id")
-                log_debug "Resolved requirement '$req_name' → ID $resolved_id"
-            else
+            if [[ -z "$resolved_id" || "$resolved_id" == "null" ]]; then
                 log_error "Requirement '$req_name' not found in CTFd — it must be ingested before challenge ID $challenge_id"
                 return 1
             fi
+            log_debug "Resolved requirement '$req_name' → ID $resolved_id"
         fi
+
+        # Reject self-requirements: a challenge cannot require itself.
+        if [[ "$resolved_id" == "$challenge_id" ]]; then
+            log_error "Challenge ID $challenge_id lists itself as a requirement — rejected"
+            return 1
+        fi
+
+        prereq_ids+=("$resolved_id")
     done < <(echo "$challenge_data" | jq -c '.requirements // [] | .[]')
 
     # Guard: requirements were declared but all entries were blank/null
@@ -365,8 +379,13 @@ ctfd_add_requirements() {
         return 1
     fi
 
-    local prereqs_array
-    prereqs_array="$(printf '%s\n' "${prereq_ids[@]}" | jq -R 'tonumber' | jq -sc '.')"
+    printf '%s\n' "${prereq_ids[@]}" | jq -R 'tonumber' | jq -sc '.'
+}
+
+# ctfd_patch_requirements CHALLENGE_ID PREREQS_JSON_ARRAY
+#   PATCHes the prerequisite list onto a challenge (empty array clears it).
+ctfd_patch_requirements() {
+    local challenge_id="$1" prereqs_array="$2"
 
     local req_payload
     req_payload="$(jq -n \
@@ -381,4 +400,34 @@ ctfd_add_requirements() {
         return 1
     }
     log_debug "Requirements set"
+}
+
+# ctfd_add_requirements — set prerequisites during install. No-op when the
+# challenge declares no requirements.
+ctfd_add_requirements() {
+    local challenge_data="$1" challenge_id="$2"
+
+    local requirements_json
+    requirements_json="$(echo "$challenge_data" | jq -c '.requirements // []')"
+    [[ "$requirements_json" == "[]" || "$requirements_json" == "null" ]] && return 0
+
+    log_debug "Resolving requirements..."
+
+    local prereqs_array
+    prereqs_array="$(_ctfd_resolve_requirement_ids "$challenge_data" "$challenge_id")" || return 1
+
+    ctfd_patch_requirements "$challenge_id" "$prereqs_array"
+}
+
+# ctfd_sync_requirements — set prerequisites to exactly the declared set,
+# clearing them when none are declared. Used by the second pass of sync, once
+# every challenge is guaranteed to exist, so name→ID resolution cannot fail on a
+# not-yet-synced prerequisite.
+ctfd_sync_requirements() {
+    local challenge_data="$1" challenge_id="$2"
+
+    local prereqs_array
+    prereqs_array="$(_ctfd_resolve_requirement_ids "$challenge_data" "$challenge_id")" || return 1
+
+    ctfd_patch_requirements "$challenge_id" "$prereqs_array"
 }
