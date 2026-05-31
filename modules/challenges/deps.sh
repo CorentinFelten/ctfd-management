@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# challenges/deps.sh — Check system dependencies and install ctfcli.
+# challenges/deps.sh — Check system tools and CTFd API dependencies.
 # Requires: lib/common.sh
 
 [[ -n "${_CHALL_DEPS_LOADED:-}" ]] && return 0
