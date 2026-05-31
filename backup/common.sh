@@ -22,10 +22,23 @@ read_env_value() {
         value=$(grep "^${key}=" "${ENV_FILE}" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d "'\"\r")
     fi
 
-    # Fallback: try docker compose config (resolves all variables)
-    if [[ -z "$value" ]] && command -v docker &>/dev/null; then
-        value=$(docker compose -f "${DOCKER_COMPOSE_PATH}" config 2>/dev/null \
-            | grep -A0 "${key}" | head -n1 | sed 's/.*: //' | tr -d "'\"\r" || true)
+    # Fallback: render the compose config and read the variable from a service's
+    # environment. Prefer JSON + jq (handles both map and list env forms); fall
+    # back to an anchored awk scan of the rendered YAML when jq is unavailable.
+    if [[ -z "$value" && -f "${DOCKER_COMPOSE_PATH}" ]] && command -v docker &>/dev/null; then
+        if command -v jq &>/dev/null; then
+            value=$(docker compose -f "${DOCKER_COMPOSE_PATH}" config --format json 2>/dev/null \
+                | jq -r --arg k "$key" '
+                    [ .services[]?.environment
+                      | if type == "object" then .[$k]
+                        elif type == "array" then (.[] | select(startswith($k + "=")) | sub("^[^=]+="; ""))
+                        else empty end ]
+                    | map(select(. != null and . != "")) | first // ""' 2>/dev/null)
+        else
+            value=$(docker compose -f "${DOCKER_COMPOSE_PATH}" config 2>/dev/null \
+                | awk -v k="$key" '$0 ~ "^[[:space:]]*"k":[[:space:]]" { sub(/^[^:]*:[[:space:]]*/, ""); print; exit }')
+        fi
+        value="$(printf '%s' "$value" | tr -d "'\"\r")"
     fi
 
     printf '%s' "$value"
