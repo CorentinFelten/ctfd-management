@@ -39,27 +39,48 @@ ctfd_api_call() {
 
     [[ -n "$data" ]] && curl_args+=(-d "$data")
 
-    local status
-    status="$(curl "${curl_args[@]}" "${url}${endpoint}" 2>/dev/null)" || {
-        rm -f "$body_file"
+    # Transient-failure retry with linear backoff. 429 (rate limited) is always
+    # safe to retry since the request was not processed; a network error or 5xx
+    # is only retried for idempotent methods, because a POST may have been
+    # applied server-side before the failure was reported.
+    local max_attempts=3 attempt=1 status body
+    while :; do
+        status="$(curl "${curl_args[@]}" "${url}${endpoint}" 2>/dev/null)" || status=""
+        body="$(cat "$body_file")"
+
+        if [[ -n "$status" && "$status" -ge 200 && "$status" -lt 300 ]]; then
+            rm -f "$body_file"
+            echo "$body"
+            return 0
+        fi
+
+        local retry=false
+        if [[ "$status" == "429" ]]; then
+            retry=true
+        elif [[ "$method" != "POST" ]] && { [[ -z "$status" ]] || [[ "$status" -ge 500 ]]; }; then
+            retry=true
+        fi
+
+        if [[ "$retry" == "true" && $attempt -lt $max_attempts ]]; then
+            local delay=$((attempt * 2))
+            log_debug "API $method $endpoint failed (status: ${status:-network-error}); retry $attempt/$((max_attempts - 1)) in ${delay}s"
+            sleep "$delay"
+            ((++attempt))
+            continue
+        fi
+        break
+    done
+
+    rm -f "$body_file"
+    if [[ -z "$status" ]]; then
         log_error "curl failed for: $method $endpoint"
         return 1
-    }
-
-    local body
-    body="$(cat "$body_file")"
-    rm -f "$body_file"
-
-    if [[ "$status" -ge 200 && "$status" -lt 300 ]]; then
-        echo "$body"
-        return 0
-    else
-        log_debug "API request failed: $method $endpoint"
-        log_debug "Status code: $status"
-        log_debug "Response: $body"
-        echo "$body"
-        return 1
     fi
+    log_debug "API request failed: $method $endpoint"
+    log_debug "Status code: $status"
+    log_debug "Response: $body"
+    echo "$body"
+    return 1
 }
 
 # ── Multipart file upload ───────────────────────────────────────────────────
