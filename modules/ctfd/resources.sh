@@ -190,6 +190,17 @@ ctfd_delete_challenge_topics() {
 
 # ── Hints ────────────────────────────────────────────────────────────────────
 
+# Hint forms accepted in challenge.yml:
+#   - "a plain string hint"
+#   - { content: "...", title: "...", cost: 10 }
+#   - { key: h2, content: "...", cost: 20, requirements: [h1] }   # gated hint
+# A gated hint stays hidden until the player has unlocked every hint named in
+# its `requirements` (referenced by the other hints' `key`). To make sure gated
+# content is never exposed via the API before its prerequisites are enforced,
+# hints are created in three passes (mirroring ctfcli):
+#   1. POST every hint — gated ones with blank content — recording key → id.
+#   2. PATCH prerequisites onto the gated hints.
+#   3. PATCH the gated hints' real content.
 ctfd_add_hints() {
     local challenge_data="$1" challenge_id="$2"
 
@@ -199,33 +210,101 @@ ctfd_add_hints() {
 
     log_debug "Adding hints..."
 
+    declare -A _hint_id_by_key=()   # local key → created hint id
+    local -a _hint_ids=()           # parallel arrays, indexed by creation order
+    local -a _hint_real_content=()  # real content to reveal in pass 3
+    local -a _hint_req_keys=()      # newline-joined prerequisite keys ("" = none)
+
+    # ── Pass 1: create every hint ──
+    local hint_entry
     while IFS= read -r hint_entry; do
         [[ -z "$hint_entry" || "$hint_entry" == "null" ]] && continue
 
-        local hint_content hint_cost
-
+        local hint_content hint_title hint_cost hint_key req_keys
         if echo "$hint_entry" | jq -e 'type == "string"' >/dev/null 2>&1; then
             hint_content="$(echo "$hint_entry" | jq -r '.')"
-            hint_cost="0"
+            hint_title=""; hint_cost="0"; hint_key=""; req_keys=""
         else
-            hint_content="$(echo "$hint_entry" | jq -r '.content // .hint')"
-            hint_cost="$(echo "$hint_entry" | jq -r '.cost // 0')"
+            hint_content="$(echo "$hint_entry" | jq -r '.content // .hint // ""')"
+            hint_title="$(echo "$hint_entry"   | jq -r '.title // ""')"
+            hint_cost="$(echo "$hint_entry"    | jq -r '.cost // 0')"
+            hint_key="$(echo "$hint_entry"     | jq -r '.key // empty')"
+            req_keys="$(echo "$hint_entry"     | jq -r '[.requirements // [] | .[]] | join("\n")')"
         fi
+
+        # Gated hints are created with blank content (filled in pass 3)
+        local post_content="$hint_content"
+        [[ -n "$req_keys" ]] && post_content=""
 
         local hint_data
         hint_data="$(jq -n \
             --argjson chal_id "$challenge_id" \
-            --arg content "$hint_content" \
+            --arg content "$post_content" \
+            --arg title "$hint_title" \
             --argjson cost "$hint_cost" \
-            '{challenge_id: $chal_id, content: $content, cost: $cost}'
+            '{challenge_id: $chal_id, content: $content, title: $title, cost: $cost}'
         )"
 
-        ctfd_api_call POST "/api/v1/hints" "$hint_data" >/dev/null || {
+        local response
+        response="$(ctfd_api_call POST "/api/v1/hints" "$hint_data")" || {
             log_warning "Failed to add hint"
             return 1
         }
-        log_debug "Added hint (cost: $hint_cost)"
+
+        local new_id
+        new_id="$(echo "$response" | jq -r '.data.id')"
+        [[ -n "$new_id" && "$new_id" != "null" ]] || {
+            log_warning "Could not read created hint id from response"
+            return 1
+        }
+
+        _hint_ids+=("$new_id")
+        _hint_real_content+=("$hint_content")
+        _hint_req_keys+=("$req_keys")
+        [[ -n "$hint_key" ]] && _hint_id_by_key["$hint_key"]="$new_id"
+
+        log_debug "Added hint (cost: $hint_cost${req_keys:+, gated})"
     done < <(echo "$challenge_data" | jq -c '.hints // [] | .[]')
+
+    # ── Passes 2 & 3: wire prerequisites, then reveal real content ──
+    local i
+    for i in "${!_hint_ids[@]}"; do
+        local req_keys="${_hint_req_keys[$i]}"
+        [[ -z "$req_keys" ]] && continue
+
+        local hid="${_hint_ids[$i]}"
+
+        local -a prereq_ids=()
+        local key
+        while IFS= read -r key; do
+            [[ -z "$key" ]] && continue
+            local rid="${_hint_id_by_key[$key]:-}"
+            [[ -n "$rid" ]] || {
+                log_warning "Hint prerequisite key '$key' is not defined among this challenge's hints"
+                return 1
+            }
+            prereq_ids+=("$rid")
+        done <<< "$req_keys"
+
+        local prereqs_json
+        prereqs_json="$(printf '%s\n' "${prereq_ids[@]}" | jq -R 'tonumber' | jq -sc '.')"
+
+        # Pass 2: prerequisites
+        ctfd_api_call PATCH "/api/v1/hints/$hid" \
+            "$(jq -n --argjson p "$prereqs_json" '{requirements: {prerequisites: $p}}')" >/dev/null || {
+            log_warning "Failed to set prerequisites for hint id $hid"
+            return 1
+        }
+
+        # Pass 3: real content
+        ctfd_api_call PATCH "/api/v1/hints/$hid" \
+            "$(jq -n --arg c "${_hint_real_content[$i]}" '{content: $c}')" >/dev/null || {
+            log_warning "Failed to reveal content for hint id $hid"
+            return 1
+        }
+
+        log_debug "Wired gated hint id $hid ($prereqs_json)"
+    done
 }
 
 # ── Tags ─────────────────────────────────────────────────────────────────────
