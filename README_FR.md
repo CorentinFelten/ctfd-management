@@ -160,6 +160,20 @@ l'extension `zync` spécifique à Galvanize), `state`, `connection_info`,
 `{prerequisites, anonymize}`), ainsi qu'une map `extra` transmise telle quelle
 pour les champs des plugins CTFd.
 
+## Authentification
+
+Lors de la première exécution d'une action qui communique avec CTFd (`ingest`,
+`sync`, ou l'action par défaut `all`), l'outil demande l'URL de votre instance
+CTFd ainsi qu'un **token d'accès administrateur**. Générez ce token au préalable
+depuis l'interface web de CTFd, connecté en tant qu'administrateur :
+**Settings → Access Tokens → Generate**. Le compte doit disposer des droits
+admin, car l'ingestion et la gestion des challenges utilisent des endpoints API
+réservés aux administrateurs.
+
+L'URL et le token sont enregistrés dans `<working-folder>/.ctfd/config` et
+réutilisés lors des exécutions suivantes : vous n'êtes donc sollicité qu'une
+seule fois.
+
 ## Actions disponibles
 
 | Action    | Description                              |

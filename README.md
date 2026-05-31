@@ -157,6 +157,18 @@ gating), `tags`, `topics`, `requirements` (either a bare list of prerequisites
 or the `{prerequisites, anonymize}` object form), and an `extra` map passed
 through verbatim for CTFd plugin fields.
 
+## Authentication
+
+The first time you run an action that talks to CTFd (`ingest`, `sync`, or the
+default `all`), the tool prompts for your CTFd instance URL and an **admin
+Access Token**. Generate this token beforehand from the CTFd web UI, logged in
+as an administrator: **Settings → Access Tokens → Generate**. The account must
+have admin rights, since ingesting and managing challenges uses admin-only API
+endpoints.
+
+The URL and token are saved to `<working-folder>/.ctfd/config` and reused on
+subsequent runs, so you are only prompted once.
+
 ## Available Actions
 
 | Action    | Description                     |
