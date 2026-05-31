@@ -134,6 +134,32 @@ deploy/
 
 # Outil de gestion des challenges
 
+## `challenge.yml` : le standard ctfcli, sans l'outil
+
+Les challenges sont décrits avec le même format `challenge.yml` que celui
+utilisé par l'outil officiel [`ctfcli`](https://github.com/CTFd/ctfcli) de CTFd.
+Les dépôts de challenges compatibles ctfcli fonctionnent donc ici sans
+modification, et les challenges rédigés pour cet outil restent portables vers
+ctfcli.
+
+Ce que cet outil ne fait **pas**, c'est encapsuler ou dépendre de `ctfcli`.
+L'ingestion et la synchronisation sont implémentées nativement en Bash via
+l'API REST de CTFd (`curl` + `jq`). Cela garde l'outil léger en dépendances
+(aucun environnement Python/pip à gérer) et permet à une seule exécution de
+construire les images Docker, d'enregistrer le challenge dans CTFd et de câbler
+le déploiement [Galvanize](https://github.com/28Pollux28/galvanize)/[Zync](https://github.com/28Pollux28/zync)
+en même temps.
+
+Les champs `challenge.yml` suivants sont pris en charge : `name`, `category`,
+`description`, `value`, `type` (les `standard`/`dynamic` de ctfcli, plus
+l'extension `zync` spécifique à Galvanize), `state`, `connection_info`,
+`attempts`, `attribution`, les valeurs de scoring dynamique
+`initial`/`minimum`/`decay`, `flags`, `files`, `hints` (y compris `title`,
+`cost` et le verrouillage par prérequis via `key`), `tags`, `topics`,
+`requirements` (soit une simple liste de prérequis, soit la forme objet
+`{prerequisites, anonymize}`), ainsi qu'une map `extra` transmise telle quelle
+pour les champs des plugins CTFd.
+
 ## Actions disponibles
 
 | Action    | Description                              |
@@ -258,14 +284,22 @@ Si le flag `--theme` est utilisé :
 - Gestion des erreurs avec rapports détaillés
 
 ### 4. Ingestion des challenges
-- Installation via l'API CTFd dans l'instance CTFd
+- Installation via l'API REST de CTFd dans l'instance CTFd
+- Les challenges sont installés dans l'**ordre des dépendances** : les `requirements` sont triés topologiquement afin qu'un prérequis soit toujours créé avant le challenge qui en dépend. Les dépendances circulaires sont détectées et signalées.
+- **Installation atomique avec rollback** : si l'attachement des flags, fichiers, indices, tags, topics ou requirements échoue, le challenge partiellement créé est supprimé, de sorte qu'une ingestion échouée ne laisse aucun challenge à moitié enregistré.
+- Validation des tags d'image Docker Compose avant l'ingestion, et détection des doublons (les challenges existants sont ignorés — utilisez `sync` pour les mettre à jour).
 
 ### 5. Synchronisation
-- Mise à jour des challenges existants
-- Option de sauvegarde avant la synchronisation
-- Support du mode `--force` pour l'écrasement
+- Met à jour les challenges existants **sur place** : le challenge est mis à jour via PATCH, son ID CTFd ne change donc jamais.
+- **Repousse les sous-ressources possédées** — flags, indices, tags, topics et fichiers — en les supprimant puis en les recréant depuis `challenge.yml`, afin que toute modification soit réellement propagée.
+- **Les requirements sont résolus en une seconde passe**, une fois que tous les challenges ont été synchronisés, afin qu'un prérequis référencé par son nom soit résolu correctement quel que soit l'ordre de traitement.
+- Option de sauvegarde avant la synchronisation, et mode `--force` pour l'écrasement.
 
-### 6. Nettoyage
+### 6. Suppression sûre vis-à-vis des dépendances
+- CTFd stocke les prérequis (`requirements`) sous forme d'IDs de challenges bruts et ne les nettoie pas en cascade : supprimer puis recréer un challenge lui donnerait un nouvel ID et orphelinerait silencieusement tous les challenges qui en dépendaient.
+- Pour éviter cela, la synchronisation ne supprime/recrée jamais un challenge (elle le met à jour sur place via PATCH), et l'outil **refuse de supprimer un challenge listé comme prérequis par d'autres challenges** sauf si cela est explicitement forcé.
+
+### 7. Nettoyage
 - Suppression des images Docker associées aux challenges
 - Mode dry-run disponible
 
@@ -310,8 +344,14 @@ tags:
   - AI
   - A:Auteur_Challenge
 
+# Prérequis : une simple liste de noms/IDs de challenges...
 requirements:
   - "Rules"
+# ...ou la forme objet, pour afficher les challenges verrouillés en « ??? » au lieu de les masquer :
+# requirements:
+#   prerequisites:
+#     - "Rules"
+#   anonymize: true
 
 # Si des fichiers sont nécessaires
 files:
@@ -324,6 +364,15 @@ hints:
     cost: 10,
     content: "Indice payant intéressant"
   }
+  # Indice verrouillé : reste caché tant que le joueur n'a pas débloqué les indices requis.
+  # Donnez une `key` aux indices prérequis et référencez ces clés dans `requirements`.
+  - key: step1
+    cost: 5
+    content: "Première étape"
+  - cost: 20
+    content: "Deuxième étape (révélée seulement après le déblocage de step1)"
+    requirements:
+      - step1
 
 value: 5
 type: zync                            # ou type: dynamic / static

@@ -134,6 +134,29 @@ deploy/
 
 # Challenge Management Tool
 
+## `challenge.yml`: the ctfcli standard, without the tool
+
+Challenges are described with the same `challenge.yml` format used by CTFd's
+official [`ctfcli`](https://github.com/CTFd/ctfcli). Existing ctfcli-compatible
+challenge repositories therefore work here unchanged, and challenges authored
+for this tool stay portable back to ctfcli.
+
+What this tool does **not** do is wrap or depend on `ctfcli`. Ingestion and
+synchronization are implemented natively in Bash against the CTFd REST API
+(`curl` + `jq`). This keeps the tool dependency-light (no Python/pip environment
+to manage) and lets a single run build the Docker images, register the
+challenge in CTFd, and wire up the [Galvanize](https://github.com/28Pollux28/galvanize)/[Zync](https://github.com/28Pollux28/zync)
+deployment together.
+
+The following `challenge.yml` fields are honored: `name`, `category`,
+`description`, `value`, `type` (ctfcli's `standard`/`dynamic`, plus the
+Galvanize-specific `zync` extension), `state`, `connection_info`, `attempts`,
+`attribution`, the dynamic-scoring `initial`/`minimum`/`decay` values, `flags`,
+`files`, `hints` (including `title`, `cost`, and `key`-based prerequisite
+gating), `tags`, `topics`, `requirements` (either a bare list of prerequisites
+or the `{prerequisites, anonymize}` object form), and an `extra` map passed
+through verbatim for CTFd plugin fields.
+
 ## Available Actions
 
 | Action    | Description                     |
@@ -258,14 +281,22 @@ If the `--theme` flag is used:
 - Error handling with detailed reports
 
 ### 4. Challenge Ingestion
-- Installation via the CTFd API into the CTFd instance
+- Installation via the CTFd REST API into the CTFd instance
+- Challenges are installed in **dependency order**: `requirements` are topologically sorted so a prerequisite is always created before the challenge that needs it. Circular dependencies are detected and reported.
+- **Atomic install with rollback**: if attaching flags, files, hints, tags, topics, or requirements fails, the partially-created challenge is removed so a failed ingest leaves no half-registered challenge behind.
+- Docker Compose image tag validation before ingest, and duplicate detection (existing challenges are skipped — use `sync` to update them).
 
 ### 5. Synchronization
-- Update existing challenges
-- Option to backup before synchronization
-- Support for `--force` mode for overwriting
+- Updates existing challenges **in place**: the challenge is PATCHed, so its CTFd ID never changes.
+- **Re-pushes owned sub-resources** — flags, hints, tags, topics, and files — by clearing and recreating them from `challenge.yml`, so edits to any of them actually propagate.
+- **Requirements are resolved in a second pass**, after every challenge has been synced, so a prerequisite referenced by name resolves correctly regardless of processing order.
+- Option to backup before synchronization, and `--force` mode for overwriting.
 
-### 6. Cleanup
+### 6. Dependency-safe deletion
+- CTFd stores requirement prerequisites as raw challenge IDs and does not cascade-clean them: deleting and recreating a challenge would give it a new ID and silently orphan every challenge that required it.
+- To avoid this, sync never deletes-and-recreates a challenge (it patches in place), and the tool **refuses to delete a challenge that other challenges list as a prerequisite** unless explicitly forced.
+
+### 7. Cleanup
 - Remove Docker images associated with challenges
 - Dry-run mode available
 
@@ -310,8 +341,14 @@ tags:
   - AI
   - A:Challenge_Author
 
+# Prerequisites: a bare list of challenge names/IDs...
 requirements:
   - "Rules"
+# ...or the object form, to show locked challenges as "???" instead of hiding them:
+# requirements:
+#   prerequisites:
+#     - "Rules"
+#   anonymize: true
 
 # If files needed
 files:
@@ -324,6 +361,15 @@ hints:
     cost: 10,
     content: "Interesting payed hint"
   }
+  # Gated hint: stays hidden until the player unlocks the hints it requires.
+  # Give the prerequisite hints a `key` and reference those keys in `requirements`.
+  - key: step1
+    cost: 5
+    content: "First step"
+  - cost: 20
+    content: "Second step (only revealed after step1 is unlocked)"
+    requirements:
+      - step1
 
 value: 5
 type: zync                            # or type: dynamic / static
