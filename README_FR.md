@@ -46,6 +46,8 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
    - Naviguer vers le panneau de configuration administrateur : `Admin Panel` --> `Plugins` --> `Zync Config`
    - Entrer l'URL de votre instancer Galvanize et le secret JWT généré par le script d'installation
 
+   > **Secret JWT** : si vous utilisez le workflow d'installation fourni, le secret JWT généré est injecté automatiquement dans le conteneur CTFd via la variable d'environnement `ZYNC_JWT_SECRET` (depuis `deploy/.env`), et le même secret est écrit dans la configuration de Galvanize. Vous n'avez donc pas besoin de saisir le secret JWT manuellement dans le panneau Zync Config.
+
 ## Options du script d'installation
 
 | Option                   | Description                                                                               | Requis   |
