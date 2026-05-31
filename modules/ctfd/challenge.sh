@@ -91,6 +91,31 @@ _ctfd_build_challenge_payload() {
 
 # ── Find challenges that depend on a given challenge ─────────────────────────
 
+# _ctfd_all_challenge_ids
+#   Echoes every challenge id (newline-separated), following CTFd pagination
+#   when present. CTFd versions that return the full list unpaginated simply
+#   stop after the first page.
+_ctfd_all_challenge_ids() {
+    local page=1 resp data more
+    while :; do
+        resp="$(ctfd_api_call GET "/api/v1/challenges?view=admin&page=${page}&per_page=100")" || return 1
+
+        data="$(echo "$resp" | jq -r '.data // [] | .[].id' 2>/dev/null)"
+        [[ -n "$data" ]] && printf '%s\n' "$data"
+
+        # Continue only when pagination metadata says there is a next page.
+        more="$(echo "$resp" | jq -r '
+            (.meta.pagination // {}) as $p
+            | if ($p.next != null) then "yes"
+              elif (($p.pages // 0) > ($p.page // 1)) then "yes"
+              else "no" end' 2>/dev/null)"
+        [[ "$more" == "yes" ]] || break
+
+        ((++page))
+        [[ $page -gt 1000 ]] && break   # safety cap
+    done
+}
+
 # ctfd_challenge_dependents CHALLENGE_ID
 #   Echoes (newline-separated) the names of any *other* challenges that list
 #   CHALLENGE_ID among their requirement prerequisites. Empty output means none.
@@ -99,11 +124,8 @@ _ctfd_build_challenge_payload() {
 ctfd_challenge_dependents() {
     local challenge_id="$1"
 
-    local list
-    list="$(ctfd_api_call GET "/api/v1/challenges?view=admin")" || return 1
-
     local ids
-    ids="$(echo "$list" | jq -r '.data // [] | .[].id' 2>/dev/null)"
+    ids="$(_ctfd_all_challenge_ids)" || return 1
     [[ -z "$ids" ]] && return 0
 
     local id detail
