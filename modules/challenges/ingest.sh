@@ -75,9 +75,10 @@ _ingest_sort_by_deps() {
         [[ -z "$name" ]] && continue
 
         _TOPO_NAME_TO_PATH["$name"]="$path"
-        # Collect only string-name requirements (numeric IDs are already in CTFd)
+        # Collect only string-name requirements (numeric IDs are already in CTFd).
+        # `requirements` may be a bare list or a {prerequisites, anonymize} object.
         reqs="$(echo "$data" | jq -r \
-            '[.requirements // [] | .[] | select(type == "string")] | join("\n")' \
+            '[(.requirements // []) | (if type == "object" then (.prerequisites // []) else . end) | .[] | select(type == "string")] | join("\n")' \
             2>/dev/null)" || reqs=""
         _TOPO_DEPS["$name"]="${reqs}"
 

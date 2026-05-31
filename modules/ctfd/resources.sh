@@ -365,13 +365,29 @@ ctfd_add_topics() {
     done < <(echo "$challenge_data" | jq -r '.topics // [] | .[]')
 }
 
+# ── Requirements normalisation ───────────────────────────────────────────────
+# The `requirements` field may be either a bare list of prerequisites or a
+# {prerequisites: [...], anonymize: bool} object. These helpers present a single
+# normalised view so the rest of the code never has to branch on the form.
+
+# Echoes the prerequisites as a compact JSON array (names and/or numeric IDs).
+_ctfd_requirement_prereqs() {
+    echo "$1" | jq -c '(.requirements // []) | if type == "object" then (.prerequisites // []) else . end'
+}
+
+# Echoes "true"/"false" — whether locked challenges should be anonymised ("???")
+# rather than hidden. Only meaningful with the object form; defaults to false.
+_ctfd_requirement_anonymize() {
+    echo "$1" | jq -r '(.requirements // {}) | if type == "object" then (.anonymize // false) else false end'
+}
+
 # ── Requirements pre-flight check ────────────────────────────────────────────
 
 ctfd_preflight_requirements() {
     local challenge_data="$1" challenge_name="$2"
 
     local requirements_json
-    requirements_json="$(echo "$challenge_data" | jq -c '.requirements // []')"
+    requirements_json="$(_ctfd_requirement_prereqs "$challenge_data")"
     [[ "$requirements_json" == "[]" || "$requirements_json" == "null" ]] && return 0
 
     log_debug "Pre-flight: resolving requirements for '$challenge_name'..."
@@ -395,7 +411,7 @@ ctfd_preflight_requirements() {
         fi
 
         log_debug "Pre-flight: requirement '$req_name' → ID $resolved_id OK"
-    done < <(echo "$challenge_data" | jq -c '.requirements // [] | .[]')
+    done < <(echo "$requirements_json" | jq -c '.[]')
 
     return 0
 }
@@ -412,7 +428,7 @@ _ctfd_resolve_requirement_ids() {
     local challenge_data="$1" challenge_id="$2"
 
     local requirements_json
-    requirements_json="$(echo "$challenge_data" | jq -c '.requirements // []')"
+    requirements_json="$(_ctfd_requirement_prereqs "$challenge_data")"
     if [[ "$requirements_json" == "[]" || "$requirements_json" == "null" ]]; then
         echo "[]"
         return 0
@@ -450,7 +466,7 @@ _ctfd_resolve_requirement_ids() {
         fi
 
         prereq_ids+=("$resolved_id")
-    done < <(echo "$challenge_data" | jq -c '.requirements // [] | .[]')
+    done < <(echo "$requirements_json" | jq -c '.[]')
 
     # Guard: requirements were declared but all entries were blank/null
     if [[ ${#prereq_ids[@]} -eq 0 ]]; then
@@ -461,18 +477,21 @@ _ctfd_resolve_requirement_ids() {
     printf '%s\n' "${prereq_ids[@]}" | jq -R 'tonumber' | jq -sc '.'
 }
 
-# ctfd_patch_requirements CHALLENGE_ID PREREQS_JSON_ARRAY
+# ctfd_patch_requirements CHALLENGE_ID PREREQS_JSON_ARRAY [ANONYMIZE]
 #   PATCHes the prerequisite list onto a challenge (empty array clears it).
+#   ANONYMIZE ("true"/"false", default false) controls whether locked
+#   challenges show as "???" rather than being hidden entirely.
 ctfd_patch_requirements() {
-    local challenge_id="$1" prereqs_array="$2"
+    local challenge_id="$1" prereqs_array="$2" anonymize="${3:-false}"
 
     local req_payload
     req_payload="$(jq -n \
         --argjson prereqs "$prereqs_array" \
-        '{requirements: {prerequisites: $prereqs}}'
+        --argjson anon "$anonymize" \
+        '{requirements: {prerequisites: $prereqs, anonymize: $anon}}'
     )"
 
-    log_debug "Setting requirements on challenge ID $challenge_id: $prereqs_array"
+    log_debug "Setting requirements on challenge ID $challenge_id: $prereqs_array (anonymize: $anonymize)"
 
     ctfd_api_call PATCH "/api/v1/challenges/$challenge_id" "$req_payload" >/dev/null || {
         log_error "Failed to set requirements for challenge ID $challenge_id"
@@ -487,15 +506,16 @@ ctfd_add_requirements() {
     local challenge_data="$1" challenge_id="$2"
 
     local requirements_json
-    requirements_json="$(echo "$challenge_data" | jq -c '.requirements // []')"
+    requirements_json="$(_ctfd_requirement_prereqs "$challenge_data")"
     [[ "$requirements_json" == "[]" || "$requirements_json" == "null" ]] && return 0
 
     log_debug "Resolving requirements..."
 
-    local prereqs_array
+    local prereqs_array anonymize
     prereqs_array="$(_ctfd_resolve_requirement_ids "$challenge_data" "$challenge_id")" || return 1
+    anonymize="$(_ctfd_requirement_anonymize "$challenge_data")"
 
-    ctfd_patch_requirements "$challenge_id" "$prereqs_array"
+    ctfd_patch_requirements "$challenge_id" "$prereqs_array" "$anonymize"
 }
 
 # ctfd_sync_requirements — set prerequisites to exactly the declared set,
@@ -505,8 +525,9 @@ ctfd_add_requirements() {
 ctfd_sync_requirements() {
     local challenge_data="$1" challenge_id="$2"
 
-    local prereqs_array
+    local prereqs_array anonymize
     prereqs_array="$(_ctfd_resolve_requirement_ids "$challenge_data" "$challenge_id")" || return 1
+    anonymize="$(_ctfd_requirement_anonymize "$challenge_data")"
 
-    ctfd_patch_requirements "$challenge_id" "$prereqs_array"
+    ctfd_patch_requirements "$challenge_id" "$prereqs_array" "$anonymize"
 }
