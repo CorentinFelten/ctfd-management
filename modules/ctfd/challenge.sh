@@ -89,10 +89,56 @@ _ctfd_build_challenge_payload() {
     echo "$api_data"
 }
 
+# ── Find challenges that depend on a given challenge ─────────────────────────
+
+# ctfd_challenge_dependents CHALLENGE_ID
+#   Echoes (newline-separated) the names of any *other* challenges that list
+#   CHALLENGE_ID among their requirement prerequisites. Empty output means none.
+#   Requirements only appear in the per-challenge detail view, so this fans out
+#   one GET per challenge — acceptable for the rare delete/rollback path.
+ctfd_challenge_dependents() {
+    local challenge_id="$1"
+
+    local list
+    list="$(ctfd_api_call GET "/api/v1/challenges?view=admin")" || return 1
+
+    local ids
+    ids="$(echo "$list" | jq -r '.data // [] | .[].id' 2>/dev/null)"
+    [[ -z "$ids" ]] && return 0
+
+    local id detail
+    while IFS= read -r id; do
+        [[ -z "$id" || "$id" == "null" || "$id" == "$challenge_id" ]] && continue
+        detail="$(ctfd_api_call GET "/api/v1/challenges/$id")" || continue
+        if echo "$detail" | jq -e --argjson target "$challenge_id" \
+            '(.data.requirements.prerequisites // []) | index($target) != null' >/dev/null 2>&1; then
+            echo "$detail" | jq -r '.data.name'
+        fi
+    done <<< "$ids"
+}
+
 # ── Delete a challenge and all its owned resources ───────────────────────────
 
+# ctfd_delete_challenge CHALLENGE_ID [NAME] [FORCE]
+#   Refuses to delete a challenge that other challenges require as a
+#   prerequisite, since CTFd stores prerequisites as raw IDs and does not
+#   cascade-clean them — deleting (and later recreating) the target would orphan
+#   those references. Pass FORCE=true to override the guard.
 ctfd_delete_challenge() {
-    local challenge_id="$1" challenge_name="${2:-ID $1}"
+    local challenge_id="$1" challenge_name="${2:-ID $1}" force="${3:-false}"
+
+    if [[ "$force" != "true" ]]; then
+        local dependents
+        dependents="$(ctfd_challenge_dependents "$challenge_id" 2>/dev/null)" || dependents=""
+        if [[ -n "$dependents" ]]; then
+            log_error "Refusing to delete challenge '$challenge_name' (ID $challenge_id) — it is a prerequisite for:"
+            while IFS= read -r dep; do
+                [[ -n "$dep" ]] && log_error "  - $dep"
+            done <<< "$dependents"
+            log_error "Remove those requirements first, or delete with force to override."
+            return 1
+        fi
+    fi
 
     # Best-effort file cleanup first (CTFd may not cascade storage deletion)
     ctfd_delete_challenge_files "$challenge_id" 2>/dev/null || \
@@ -172,7 +218,9 @@ ctfd_install_challenge() {
     _rollback_install() {
         local step="$1"
         log_error "Failed to attach $step for '$name' — rolling back"
-        if ctfd_delete_challenge "$challenge_id" "$name"; then
+        # force: this challenge was just created, so under topological install
+        # order nothing can depend on it yet — skip the dependents guard.
+        if ctfd_delete_challenge "$challenge_id" "$name" "true"; then
             log_warning "Rolled back: challenge '$name' has been removed from CTFd"
         fi
         return 1
