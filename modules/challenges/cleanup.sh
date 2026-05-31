@@ -37,15 +37,14 @@ cleanup_docker() {
 
     # ── Stop running compose stacks ──
     if [[ ${#compose_challenges[@]} -gt 0 ]]; then
-        local all_running
-        all_running="$(docker ps --format '{{.Names}}' 2>/dev/null || true)"
         local -a running_stacks=()
 
+        # Ask Compose itself whether each stack has running containers, so the
+        # project name is resolved correctly rather than matched by folder-name
+        # prefix (Docker lowercases/sanitises project names).
         local cpath
         for cpath in "${compose_challenges[@]}"; do
-            local cname
-            cname="$(basename "$cpath")"
-            if echo "$all_running" | grep -q "^${cname}"; then
+            if [[ -n "$( (cd "$cpath" 2>/dev/null && docker compose ps -q 2>/dev/null || true) )" ]]; then
                 running_stacks+=("$cpath")
             fi
         done

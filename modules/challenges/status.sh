@@ -54,25 +54,21 @@ show_status() {
     echo "  Categories: ${#categories[@]} (${categories[*]})" >&2
     echo >&2
 
-    if command -v ctf &>/dev/null; then
-        printf '%b%s%b\n' "$CYAN" "CTFcli Status:" "$NC" >&2
-        echo "  Version: $(ctf --version 2>/dev/null | head -n1 || echo unknown)" >&2
-        if [[ -f ".ctf/config" ]]; then
-            echo "  Configuration: Found" >&2
-        else
-            echo "  Configuration: Not found (run 'ctf init' first)" >&2
-        fi
+    printf '%b%s%b\n' "$CYAN" "CTFd Integration:" "$NC" >&2
+    echo "  YAML parser: $(yaml_strategy)" >&2
+    if ctfd_config_exists; then
+        echo "  Configuration: Found (${CONFIG[WORKING_DIR]}/.ctfd/config)" >&2
     else
-        printf '%b%s%b\n' "$YELLOW" "CTFcli: Not installed" "$NC" >&2
+        echo "  Configuration: Not found (you will be prompted on first ingest/sync)" >&2
     fi
 
-    # Running compose services
+    # Running compose services — ask Compose itself per challenge directory so the
+    # project name is resolved correctly (Docker lowercases/sanitises it), instead
+    # of guessing container names by prefix.
     if [[ $compose_ct -gt 0 && "${CONFIG[DRY_RUN]}" == "false" ]]; then
         echo >&2
         printf '%b%s%b\n' "$CYAN" "Running Compose Services:" "$NC" >&2
         local running=0
-        local all_running
-        all_running="$(docker ps --format '{{.Names}}' 2>/dev/null || true)"
 
         for category in "${CONFIG[CHALLENGE_PATH]}"/*; do
             [[ -d "$category" ]] || continue
@@ -82,8 +78,8 @@ show_status() {
                 [[ -f "$category/$cname/docker-compose.yml" ]] || continue
 
                 local count
-                count="$(echo "$all_running" | grep -c "^${cname}" 2>/dev/null || echo 0)"
-                if [[ $count -gt 0 ]]; then
+                count="$( (cd "$category/$cname" 2>/dev/null && docker compose ps -q 2>/dev/null || true) | grep -c . || true)"
+                if [[ "$count" -gt 0 ]]; then
                     echo "  $cname: $count container(s) running" >&2
                     ((++running))
                 fi
