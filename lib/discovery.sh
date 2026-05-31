@@ -52,23 +52,61 @@ should_process_challenge() {
     return 0
 }
 
-# ── Extract a field from challenge.yml using yq ─────────────────────────────
+# ── Extract a field from challenge.yml ──────────────────────────────────────
+#
+# Each challenge.yml is parsed to JSON exactly once and memoised, so the several
+# get_challenge_info calls per challenge (name/type/image/playbook_name) spawn a
+# single parser instead of one yq per field. Callers invoke get_challenge_info
+# via $(...), i.e. in a subshell, so an in-memory cache would not survive across
+# calls — the cache is on disk instead. $$ is stable across those subshells (and
+# across parallel build workers), so they all share one per-run cache directory.
+# Challenge files do not change mid-run, so cached entries stay valid; the
+# directory is removed on exit by lib/common.sh's cleanup trap.
+
+_CHALL_YAML_CACHE_DIR="${TMPDIR:-/tmp}/ctf_yamlcache_$$"
+
+_challenge_yaml_json() {
+    local yml="$1"
+    [[ -f "$yml" ]] || return 1
+
+    local cache_file="${_CHALL_YAML_CACHE_DIR}/${yml//[^A-Za-z0-9._-]/_}"
+    if [[ -f "$cache_file" ]]; then
+        cat "$cache_file"
+        return 0
+    fi
+
+    local json
+    json="$(parse_challenge_yaml "$yml" 2>/dev/null || true)"
+
+    # Publish atomically (rename) so a parallel worker never reads a partial file
+    mkdir -p "$_CHALL_YAML_CACHE_DIR" 2>/dev/null || true
+    local tmp="${cache_file}.${BASHPID}.tmp"
+    if printf '%s' "$json" > "$tmp" 2>/dev/null; then
+        mv -f "$tmp" "$cache_file" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    fi
+
+    printf '%s' "$json"
+}
 
 get_challenge_info() {
     local challenge_yml="$1" info_type="$2"
     [[ -f "$challenge_yml" ]] || return 1
 
-    # Map legacy short names to yq paths
-    local yq_path
+    # Map legacy short names to jq paths
+    local jq_path
     case "$info_type" in
-        name)  yq_path=".name" ;;
-        type)  yq_path=".type" ;;
-        image) yq_path=".deploy_parameters.image" ;;
-        .*)    yq_path="$info_type" ;;           # already a yq path
-        *)     yq_path=".$info_type" ;;           # bare key -> .key
+        name)  jq_path=".name" ;;
+        type)  jq_path=".type" ;;
+        image) jq_path=".deploy_parameters.image" ;;
+        .*)    jq_path="$info_type" ;;            # already a path
+        *)     jq_path=".$info_type" ;;            # bare key -> .key
     esac
 
+    local json
+    json="$(_challenge_yaml_json "$challenge_yml")"
+    [[ -n "$json" ]] || return 1
+
     local result
-    result="$(yq "$yq_path" "$challenge_yml" 2>/dev/null)" || return 1
+    result="$(printf '%s' "$json" | jq -r "$jq_path // empty" 2>/dev/null)" || return 1
     [[ -n "$result" && "$result" != "null" ]] && printf '%s' "$result"
 }
