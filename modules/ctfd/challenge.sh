@@ -277,6 +277,36 @@ ctfd_sync_challenge() {
         return 1
     }
 
+    # Refresh owned sub-resources by clearing then recreating from the YAML so
+    # that edits (and removals) propagate. The parent challenge is PATCHed in
+    # place above — its ID never changes — so prerequisite references that other
+    # challenges hold to this one stay valid. Requirements are intentionally NOT
+    # set here: they are wired in a second pass (see sync_challenges) once every
+    # challenge is guaranteed to exist, making name→ID resolution order-safe.
+    log_debug "Refreshing flags for: $name"
+    ctfd_delete_challenge_flags "$challenge_id" || \
+        log_warning "Could not cleanly delete existing flags for: $name (proceeding anyway)"
+    ctfd_add_flags "$challenge_data" "$challenge_id" "$challenge_path" || \
+        log_warning "Some flags failed to re-add for: $name"
+
+    log_debug "Refreshing hints for: $name"
+    ctfd_delete_challenge_hints "$challenge_id" || \
+        log_warning "Could not cleanly delete existing hints for: $name (proceeding anyway)"
+    ctfd_add_hints "$challenge_data" "$challenge_id" || \
+        log_warning "Some hints failed to re-add for: $name"
+
+    log_debug "Refreshing tags for: $name"
+    ctfd_delete_challenge_tags "$challenge_id" || \
+        log_warning "Could not cleanly delete existing tags for: $name (proceeding anyway)"
+    ctfd_add_tags "$challenge_data" "$challenge_id" || \
+        log_warning "Some tags failed to re-add for: $name"
+
+    log_debug "Refreshing topics for: $name"
+    ctfd_delete_challenge_topics "$challenge_id" || \
+        log_warning "Could not cleanly delete existing topics for: $name (proceeding anyway)"
+    ctfd_add_topics "$challenge_data" "$challenge_id" || \
+        log_warning "Some topics failed to re-add for: $name"
+
     log_debug "Refreshing files for: $name"
     ctfd_delete_challenge_files "$challenge_id" || \
         log_warning "Could not cleanly delete existing files for: $name (proceeding anyway)"

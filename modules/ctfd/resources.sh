@@ -135,26 +135,57 @@ ctfd_upload_challenge_files() {
     return "$any_failed"
 }
 
-ctfd_delete_challenge_files() {
-    local challenge_id="$1"
+# _ctfd_delete_subresources CHALLENGE_ID LIST_ENDPOINT DELETE_PATH_FMT LABEL
+#   Generic best-effort cleanup: list a challenge's owned sub-resources via
+#   LIST_ENDPOINT and DELETE each one. DELETE_PATH_FMT is a printf format string
+#   with a single %s placeholder for the resource id. Failures are logged but do
+#   not abort, mirroring CTFd's lack of cascade deletion guarantees.
+_ctfd_delete_subresources() {
+    local challenge_id="$1" list_endpoint="$2" delete_fmt="$3" label="$4"
 
     local response
-    response="$(ctfd_api_call GET "/api/v1/files?challenge_id=${challenge_id}")" || {
-        log_warning "Could not list files for challenge $challenge_id"
+    response="$(ctfd_api_call GET "$list_endpoint")" || {
+        log_warning "Could not list $label for challenge $challenge_id"
         return 1
     }
 
-    local file_ids
-    file_ids="$(echo "$response" | jq -r '.data // [] | .[].id' 2>/dev/null)"
-    [[ -z "$file_ids" ]] && { log_debug "No existing files to delete for challenge $challenge_id"; return 0; }
+    local ids
+    ids="$(echo "$response" | jq -r '.data // [] | .[].id' 2>/dev/null)"
+    [[ -z "$ids" ]] && { log_debug "No existing $label to delete for challenge $challenge_id"; return 0; }
 
-    local file_id
-    while IFS= read -r file_id; do
-        [[ -z "$file_id" || "$file_id" == "null" ]] && continue
-        ctfd_api_call DELETE "/api/v1/files/$file_id" >/dev/null || \
-            log_warning "Failed to delete file ID $file_id from challenge $challenge_id"
-        log_debug "Deleted file ID: $file_id"
-    done <<< "$file_ids"
+    local id del_endpoint
+    while IFS= read -r id; do
+        [[ -z "$id" || "$id" == "null" ]] && continue
+        printf -v del_endpoint "$delete_fmt" "$id"
+        ctfd_api_call DELETE "$del_endpoint" >/dev/null || \
+            log_warning "Failed to delete $label id $id from challenge $challenge_id"
+        log_debug "Deleted $label id: $id"
+    done <<< "$ids"
+}
+
+ctfd_delete_challenge_files() {
+    _ctfd_delete_subresources "$1" "/api/v1/files?challenge_id=$1" "/api/v1/files/%s" "files"
+}
+
+# Owned sub-resource deleters used by sync to clear-then-recreate. None of these
+# touch the parent challenge, so its ID is preserved and any prerequisite
+# references other challenges hold remain valid.
+ctfd_delete_challenge_flags() {
+    _ctfd_delete_subresources "$1" "/api/v1/challenges/$1/flags" "/api/v1/flags/%s" "flags"
+}
+
+ctfd_delete_challenge_tags() {
+    _ctfd_delete_subresources "$1" "/api/v1/challenges/$1/tags" "/api/v1/tags/%s" "tags"
+}
+
+ctfd_delete_challenge_hints() {
+    _ctfd_delete_subresources "$1" "/api/v1/challenges/$1/hints" "/api/v1/hints/%s" "hints"
+}
+
+# Topics are shared entities; the per-challenge association (ChallengeTopic) is
+# what we remove, hence the ?type=challenge&target_id=<assoc-id> form.
+ctfd_delete_challenge_topics() {
+    _ctfd_delete_subresources "$1" "/api/v1/challenges/$1/topics" "/api/v1/topics?type=challenge&target_id=%s" "topics"
 }
 
 # ── Hints ────────────────────────────────────────────────────────────────────
