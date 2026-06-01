@@ -17,8 +17,11 @@ setup_env_key() {
     fi
 
     if grep -q "^${key}=" "$env_file"; then
-        awk -v k="$key" -v v="$value" '{
-            if (index($0, k "=") == 1) print k "=" v
+        # Pass the value via the environment (ENVIRON), not `-v v=`, so awk does
+        # not interpret backslash escapes inside the value (e.g. a credential
+        # containing a literal backslash would otherwise be mangled).
+        _ENV_VALUE="$value" awk -v k="$key" '{
+            if (index($0, k "=") == 1) print k "=" ENVIRON["_ENV_VALUE"]
             else print
         }' "$env_file" > "${env_file}.tmp"
         mv "${env_file}.tmp" "$env_file"

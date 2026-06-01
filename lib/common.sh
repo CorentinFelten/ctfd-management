@@ -73,7 +73,12 @@ trap _run_cleanup EXIT INT TERM
 
 generate_password() {
     local length="${1:-15}"
-    openssl rand -base64 256 | tr -d '+/=\n' | head -c "$length"
+    # Capture into a variable and slice, rather than piping into `head -c`.
+    # Under `set -o pipefail`, head closing the pipe early can surface openssl's
+    # SIGPIPE (141) as the function's exit status and trip `set -e` in callers.
+    local raw
+    raw="$(openssl rand -base64 256 | tr -d '+/=\n')"
+    printf '%s' "${raw:0:length}"
 }
 
 is_ip_address() {

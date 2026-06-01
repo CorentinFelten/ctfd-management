@@ -159,7 +159,7 @@ ingest_challenges() {
     log_info "Found $total challenges to ingest${fail:+ ($fail rejected by tag validation)}"
     if [[ $total -eq 0 ]]; then
         if [[ $fail -gt 0 ]]; then
-            log_error "No challenges to ingest \u2014 all candidates failed tag validation"
+            log_error "No challenges to ingest, all candidates failed tag validation"
             log_error "Failed challenges:"
             printf '  - %s\n' "${failed_names[@]}" >&2
             return 1
