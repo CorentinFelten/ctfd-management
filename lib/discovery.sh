@@ -88,6 +88,52 @@ _challenge_yaml_json() {
     printf '%s' "$json"
 }
 
+# ── Detect whether a challenge uses a compose-based deployment ─────────────
+#
+# is_compose_challenge CHALLENGE_DIR
+#
+# Returns 0 (true) when the challenge should be treated as a custom_compose
+# challenge. Detection mirrors Galvanize's auto-detection: a compose file
+# (compose.y[a]ml or docker-compose.y[a]ml) next to challenge.yml is
+# sufficient — playbook_name no longer needs to be set explicitly.
+# Does NOT check type — callers gate on type=zync where needed.
+
+is_compose_challenge() {
+    local challenge_dir="$1"
+
+    # Explicit playbook_name still honored for backwards compat
+    local yml="$challenge_dir/challenge.yml"
+    if [[ -f "$yml" ]]; then
+        local pn
+        pn="$(get_challenge_info "$yml" "playbook_name")"
+        [[ "$pn" == "custom_compose" ]] && return 0
+    fi
+
+    # Auto-detect: any compose file present (same names Galvanize checks)
+    local f
+    for f in compose.yml compose.yaml docker-compose.yml docker-compose.yaml; do
+        [[ -f "$challenge_dir/$f" ]] && return 0
+    done
+
+    return 1
+}
+
+# ── Resolve the compose file path for a challenge ─────────────────────────
+#
+# get_compose_file CHALLENGE_DIR
+#
+# Prints the path to the first matching compose file, in Galvanize's
+# priority order. Returns 1 if none found.
+
+get_compose_file() {
+    local challenge_dir="$1"
+    local f
+    for f in compose.yaml compose.yml docker-compose.yaml docker-compose.yml; do
+        [[ -f "$challenge_dir/$f" ]] && { echo "$challenge_dir/$f"; return 0; }
+    done
+    return 1
+}
+
 get_challenge_info() {
     local challenge_yml="$1" info_type="$2"
     [[ -f "$challenge_yml" ]] || return 1
