@@ -90,13 +90,13 @@ _compose_inject_tags() {
     done
 }
 
-# ── Build all docker-compose.yml files for zync/custom_compose challenges ────
+# ── Build all compose files for zync compose challenges ──────────────────────
 
 build_compose_stacks() {
     local total=0 ok=0 fail=0
     local -a failed_names=() compose_files=()
 
-    log_info "Discovering docker-compose.yml files..."
+    log_info "Discovering compose files..."
 
     local category challenge yml compose_file
     for category in "${CONFIG[CHALLENGE_PATH]}"/*; do
@@ -108,18 +108,14 @@ build_compose_stacks() {
             yml="$challenge/challenge.yml"
             [[ -f "$yml" ]] || continue
 
-            # Only process challenges that are type=zync AND playbook_name=custom_compose
-            local ctype cplaybook
+            local ctype
             ctype="$(get_challenge_info "$yml" "type")"
             [[ "$ctype" == "zync" ]] || continue
-            cplaybook="$(get_challenge_info "$yml" "playbook_name")"
-            [[ "$cplaybook" == "custom_compose" ]] || continue
+            is_compose_challenge "$challenge" || continue
 
-            for compose_file in "$challenge"/docker-compose.yml "$challenge"/docker-compose.yaml; do
-                [[ -f "$compose_file" ]] || continue
-                compose_files+=("$compose_file")
-                ((++total))
-            done
+            compose_file="$(get_compose_file "$challenge")" || continue
+            compose_files+=("$compose_file")
+            ((++total))
         done
     done
 
@@ -203,10 +199,8 @@ _build_single() {
         return 0
     }
 
-    local playbook_name
-    playbook_name="$(get_challenge_info "$challenge_yml" "playbook_name")"
-    [[ "$playbook_name" == "custom_compose" ]] && {
-        log_debug "Skipping single-image build for $challenge_name (playbook_name: custom_compose)"
+    is_compose_challenge "$category/$challenge_folder" && {
+        log_debug "Skipping single-image build for $challenge_name (compose challenge)"
         return 0
     }
 
@@ -255,9 +249,7 @@ _build_single_quiet() {
         echo "SKIP:${challenge_name}" > "$status_file"; return 0
     fi
 
-    local playbook_name
-    playbook_name="$(get_challenge_info "$challenge_yml" "playbook_name")"
-    if [[ "$playbook_name" == "custom_compose" ]]; then
+    if is_compose_challenge "$category/$challenge_folder"; then
         echo "SKIP:${challenge_name}" > "$status_file"; return 0
     fi
 
@@ -356,9 +348,7 @@ build_challenges() {
                 local ctype
                 ctype="$(get_challenge_info "$yml" "type")"
                 if [[ "$ctype" == "zync" ]]; then
-                    local cplaybook
-                    cplaybook="$(get_challenge_info "$yml" "playbook_name")"
-                    if [[ "$cplaybook" != "custom_compose" ]]; then
+                    if ! is_compose_challenge "$challenge"; then
                         to_build+=("${category}	${challenge}")
                         ((++total))
                     fi
