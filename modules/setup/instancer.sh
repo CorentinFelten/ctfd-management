@@ -88,7 +88,13 @@ configure_instancer() {
     yq -i ".auth.jwt_secret = \"${CONFIG[JWT_SECRET_KEY]}\"" "$config_path"
     yq -i ".instancer.ansible.user = \"${ANSIBLE_USER}\"" "$config_path"
     yq -i ".instancer.ansible.inventory = \"${CONFIG[DOMAIN]},\"" "$config_path"
-    yq -i ".instancer.instancer_host = \"${CONFIG[DOMAIN]}\"" "$config_path"
+    local instancer_host="${CONFIG[DOMAIN]}"
+    if is_ip_address "$instancer_host"; then
+        # sslip.io requires dashes instead of colons for IPv6 addresses
+        instancer_host="${instancer_host//:/-}.sslip.io"
+        log_info "IP address detected — using sslip.io wildcard DNS: ${instancer_host}"
+    fi
+    yq -i ".instancer.instancer_host = \"${instancer_host}\"" "$config_path"
     yq -i ".instancer.redis.addr = \"redis:6379\"" "$config_path"
     yq -i "del(.instancer.extra_deployment_parameters) | .instancer.extra_deployment_parameters.traefik_network = \"${docker_proxy_network}\"" "$config_path"
 
