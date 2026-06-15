@@ -1,5 +1,6 @@
 # Traefik Static Configuration — Local / Development
-# No HTTPS redirect. Use this when deploying with --no-https or an IP address.
+# Self-signed TLS on :443 so Galvanize-generated https:// URLs work.
+# No ACME / Let's Encrypt — Traefik auto-generates a default certificate.
 
 accessLog:
   addInternals: true
@@ -32,6 +33,12 @@ entryPoints:
   web:
     address: ":80"
     asDefault: true
+
+  websecure:
+    address: ":443"
+    asDefault: true
+    http:
+      tls: {}
 
   instancer:
     address: ":8080"
