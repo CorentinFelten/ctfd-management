@@ -1,8 +1,7 @@
 #!/bin/sh
 # Custom entrypoint wrapper for CTFd
-# Installs plugin requirements before delegating to the upstream entrypoint.
-# Uses a marker file so pip install only runs once per container lifecycle,
-# not on every restart.
+# Installs plugin requirements before delegating to the upstream entrypoint,
+# only when they changed since the last successful install.
 
 set -eu
 
@@ -15,22 +14,31 @@ if [ ! -w "/var/uploads" ]; then
     exit 1
 fi
 
-MARKER="/tmp/.plugins_installed"
+# The marker stores a hash of every plugin's requirements.txt, so requirements
+# are reinstalled whenever they change (e.g. after setup.sh updates a plugin
+# and restarts the container), and skipped on plain restarts otherwise.
+MARKER="/tmp/.plugin_requirements.sha256"
+CURRENT="$(cat CTFd/plugins/*/requirements.txt 2>/dev/null | sha256sum | cut -d' ' -f1)"
 
-if [ ! -f "$MARKER" ]; then
+if [ ! -f "$MARKER" ] || [ "$(cat "$MARKER")" != "$CURRENT" ]; then
     echo "[custom-entrypoint] Installing plugin requirements..."
+    FAILED=0
     for d in CTFd/plugins/*/; do
         if [ -f "${d}requirements.txt" ]; then
             echo "[custom-entrypoint]   -> ${d}requirements.txt"
             pip install --no-cache-dir -r "${d}requirements.txt" || {
                 echo "[custom-entrypoint] WARNING: Failed to install requirements for ${d}" >&2
+                FAILED=1
             }
         fi
     done
-    touch "$MARKER"
-    echo "[custom-entrypoint] Plugin requirements installed."
+    # Only remember success, so a failed install is retried on the next start
+    if [ "$FAILED" -eq 0 ]; then
+        echo "$CURRENT" > "$MARKER"
+        echo "[custom-entrypoint] Plugin requirements installed."
+    fi
 else
-    echo "[custom-entrypoint] Plugin requirements already installed, skipping."
+    echo "[custom-entrypoint] Plugin requirements unchanged, skipping."
 fi
 
 exec /opt/CTFd/docker-entrypoint.sh "$@"

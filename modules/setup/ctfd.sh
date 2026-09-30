@@ -61,14 +61,29 @@ install_ctfd() {
     log_info "Installing CTFd..."
 
     # ── Clone / update plugin ──
+    # A changed plugin needs a CTFd restart (plugins load at startup); the
+    # container entrypoint then reinstalls requirements if they changed.
+    local plugin_updated="false"
     mkdir -p "$deploy_dir/ctfd/plugins"
-    if [[ ! -d "$plugin_path" ]]; then
+    if [[ ! -d "$plugin_path/.git" ]]; then
         log_info "Cloning zync instancer plugin..."
         git -C "$deploy_dir/ctfd/plugins" clone "$DOCKER_PLUGIN_REPO"
     else
         log_info "Zync plugin already exists, updating..."
-        git -C "$plugin_path" pull origin main \
-            || log_warning "git pull failed for zync; continuing with existing code"
+        local rev_before rev_after
+        rev_before="$(git -C "$plugin_path" rev-parse HEAD)"
+        # Pull the branch the clone tracks (the repository default branch)
+        if git -C "$plugin_path" pull --ff-only --quiet; then
+            rev_after="$(git -C "$plugin_path" rev-parse HEAD)"
+            if [[ "$rev_before" != "$rev_after" ]]; then
+                plugin_updated="true"
+                log_success "Zync plugin updated: ${rev_before:0:7} → ${rev_after:0:7}"
+            else
+                log_info "Zync plugin already up to date (${rev_after:0:7})"
+            fi
+        else
+            log_warning "Could not fast-forward the zync plugin (local changes or diverged history?); keeping the current version"
+        fi
     fi
     log_success "Instancer plugin configuration complete"
 
@@ -265,6 +280,12 @@ install_ctfd() {
     log_info "Starting CTFd containers..."
     "${compose_cmd[@]}" up -d
     log_success "CTFd containers started successfully"
+
+    if [[ "$plugin_updated" == "true" ]]; then
+        log_info "Restarting CTFd to load the updated zync plugin..."
+        "${compose_cmd[@]}" restart ctfd
+        log_success "CTFd restarted"
+    fi
     log_success "CTFd installation complete!"
     log_info ""
     log_info "CTFd is now available at: ${ctfd_full_url}"
