@@ -46,7 +46,8 @@ install_ctfd() {
     compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${deploy_dir}/.env" \
         | head -n1 | cut -d= -f2- | tr -d "'\"\r" || true)"
     compose_project_name="${compose_project_name:-ctfd_infra}"
-    local docker_proxy_network="${compose_project_name}_proxy"
+    # Traefik's default Docker network: the one Galvanize attaches challenges to
+    local challenge_network="${compose_project_name}_challenges"
 
     local jwt_secret_key
     jwt_secret_key="$(grep '^ZYNC_JWT_SECRET=' "$deploy_dir/.env" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
@@ -182,11 +183,13 @@ install_ctfd() {
     mkdir -p "$deploy_dir/traefik-config/letsencrypt"
 
     # ── Patch Traefik static configs with runtime values ──
-    log_info "Setting Traefik Docker provider network to: $docker_proxy_network"
+    log_info "Setting Traefik Docker provider network to: $challenge_network"
     local traefik_file
     for traefik_file in "$traefik_cfg" "$traefik_local_cfg"; do
         if [[ -f "$traefik_file" ]]; then
-            sed -i "s|network:.*_proxy|network: ${docker_proxy_network}|" "$traefik_file"
+            # Match any value (the files hold a single `network:` key) so that
+            # configs from older deployments pointing at *_proxy are fixed too
+            sed -i "s|^\([[:space:]]*\)network:.*|\1network: ${challenge_network}|" "$traefik_file"
         fi
     done
     log_success "Traefik network configuration updated"

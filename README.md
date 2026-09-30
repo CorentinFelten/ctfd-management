@@ -117,6 +117,19 @@ By default, `setup.sh` deploys Galvanize as part of the CTFd Docker Compose stac
 
 The Ansible playbooks (`http`, `tcp`, `custom_compose`) are shipped in `config/galvanize/playbooks/` and copied to `deploy/data/galvanize/playbooks/` on every setup run. They are copies of Galvanize's upstream [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/master/data/playbooks) (v0.7.1): the `data/` bind mount hides the playbooks baked into the Galvanize image, so they must live on the host. When upgrading Galvanize, refresh these files from upstream.
 
+### Network isolation
+
+The stack uses separate Docker networks so that player-controlled challenge containers cannot reach the platform:
+
+| Network | Members | Purpose |
+|---------|---------|---------|
+| `proxy` | Traefik, CTFd, instancer | Public ingress (ports 80/443), instancer outbound SSH to the Ansible target host |
+| `internal` (no internet access) | CTFd, MariaDB, Redis, instancer | Backend traffic (database, Redis) |
+| `challenges` | Traefik, challenge instances | Traefik routing to `http` challenges |
+
+- Challenge instances cannot reach CTFd, MariaDB, Redis or the instancer directly; they only see the same public endpoints as players. They can still reach Traefik, other challenge instances on the `challenges` network, and the internet. TCP challenges run on Docker's default bridge network.
+- Traefik's Docker provider uses the `challenges` network by default, because containers deployed by Galvanize carry no `traefik.docker.network` label. Core services routed by Traefik (CTFd) must set `traefik.docker.network=<COMPOSE_PROJECT_NAME>_proxy` explicitly.
+
 ## Deployment Directory Structure
 
 After running `setup.sh`, the following layout is created under `<working-folder>/deploy/`:

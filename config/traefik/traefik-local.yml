@@ -20,7 +20,10 @@ providers:
   docker:
     exposedByDefault: false
     endpoint: "unix:///var/run/docker.sock"
-    network: ctfd_infra_proxy
+    # Default network for containers without a traefik.docker.network label,
+    # i.e. challenge instances deployed by Galvanize. Core services (CTFd) set
+    # the label explicitly to use the proxy network.
+    network: ctfd_infra_challenges
   file:
     filename: /etc/traefik/config.yml
     watch: true

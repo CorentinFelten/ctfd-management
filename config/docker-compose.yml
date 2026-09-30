@@ -72,7 +72,11 @@ services:
       # NOTE: grants root-equivalent host access; consider a socket proxy in production
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - proxy 
+      - proxy
+      # Traefik is the only core service attached to the challenges network, so
+      # it can route to challenge instances without exposing CTFd, MariaDB,
+      # Redis or the instancer to them.
+      - challenges
 
   maria-db:
     # MariaDB is used because CTFd does not officially support PostgreSQL
@@ -157,3 +161,6 @@ networks:
   proxy:
   internal:
     internal: true
+  # Challenge instances deployed by Galvanize (traefik_network in the Galvanize
+  # config). Shared only with Traefik.
+  challenges:

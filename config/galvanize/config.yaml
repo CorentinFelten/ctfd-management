@@ -30,4 +30,9 @@ instancer:
     cpus: "1"             # CPU limit per container (e.g. "0.5", "1", "2")
     memory: "512M"        # Memory limit per container (e.g. "256M", "512M", "1G")
   extra_deployment_parameters: # Additional parameters for deployment (added to vars in Ansible)
-    example_param: "example_value"
+    # Name of the external Docker network Traefik watches on the target host(s).
+    # Required for http challenges and for http exposures in compose challenges.
+    # This is a dedicated network: challenge containers never share a network with
+    # CTFd, MariaDB, Redis or the instancer. setup.sh sets it to
+    # "<COMPOSE_PROJECT_NAME>_challenges".
+    traefik_network: "ctfd_infra_challenges"
