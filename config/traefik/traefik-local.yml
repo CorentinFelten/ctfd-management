@@ -43,8 +43,5 @@ entryPoints:
     http:
       tls: {}
 
-  instancer:
-    address: ":8080"
-
   traefik:
     address: ":9090"

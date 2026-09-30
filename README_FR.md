@@ -44,9 +44,9 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 3. **Accéder à l'URL du serveur configuré**
    - Configurer l'événement CTF
    - Naviguer vers le panneau de configuration administrateur : `Admin Panel` --> `Plugins` --> `Zync Config`
-   - Entrer l'URL de votre instancer Galvanize et le secret JWT généré par le script d'installation
+   - Vérifier l'URL de l'instancer Galvanize et le secret JWT (tous deux pré-remplis par le script d'installation, voir ci-dessous)
 
-   > **Secret JWT** : si vous utilisez le workflow d'installation fourni, le secret JWT généré est injecté automatiquement dans le conteneur CTFd via la variable d'environnement `ZYNC_JWT_SECRET` (depuis `deploy/.env`), et le même secret est écrit dans la configuration de Galvanize. Vous n'avez donc pas besoin de saisir le secret JWT manuellement dans le panneau Zync Config.
+   > **URL de l'instancer et secret JWT** : avec le workflow d'installation fourni, les deux sont injectés automatiquement dans le conteneur CTFd depuis `deploy/.env` : `ZYNC_DEPLOYER_URL` (`https://instancer.<domaine>` pour l'instancer intégré) et `ZYNC_JWT_SECRET`. Le même secret est écrit dans la configuration de Galvanize. Vous n'avez donc pas besoin de saisir ces valeurs manuellement dans le panneau Zync Config.
 
 ## Options du script d'installation
 
@@ -111,7 +111,7 @@ Si vous utilisez l'option `--theme`, le script montera automatiquement le dossie
 Par défaut, `setup.sh` déploie Galvanize dans le même stack Docker Compose que CTFd. Deux alternatives sont disponibles :
 
 - **`--instancer-url URL`** — pointer CTFd vers une instance Galvanize déjà en cours d'exécution ; aucun conteneur local n'est démarré.
-- **`--no-instancer`** — ignorer Galvanize entièrement lors de l'installation. Vous pouvez le déployer indépendamment plus tard avec sa propre configuration (voir `config/galvanize/config.yaml` pour le modèle de configuration et `config/galvanize/playbooks/` pour les playbooks Ansible).
+- **`--no-instancer`** — ignorer Galvanize entièrement lors de l'installation. Vous pouvez le déployer indépendamment plus tard avec sa propre configuration (voir `config/galvanize/config.yaml` pour le modèle de configuration et `config/galvanize/playbooks/` pour les playbooks Ansible). `ZYNC_DEPLOYER_URL` vaut `https://instancer.<domaine>` par défaut ; modifiez-le dans `deploy/.env` si votre instancer est ailleurs.
 
 ### Playbooks Galvanize
 
@@ -127,8 +127,11 @@ Le stack utilise des réseaux Docker séparés afin que les conteneurs de challe
 | `internal` (sans accès internet) | CTFd, MariaDB, Redis, instancer | Trafic backend (base de données, Redis) |
 | `challenges` | Traefik, instances de challenges | Routage Traefik vers les challenges `http` |
 
+- L'API Galvanize doit être joignable publiquement : Zync l'appelle directement depuis le navigateur des joueurs (et depuis le tableau de bord admin), ce qui permet aussi d'héberger Galvanize sur une machine séparée (`--instancer-url`). L'instancer intégré est publié par Traefik sur son propre sous-domaine, `https://instancer.<domaine>` (`http://instancer.<ip>.sslip.io` pour les déploiements sur IP), sur le port 443. Aucun port supplémentaire (comme 8080) n'est ouvert, et son endpoint Prometheus `/metrics` n'est pas routé. Ce sous-domaine doit pointer vers le serveur ; l'enregistrement DNS wildcard utilisé pour les sous-domaines des challenges (`*.<domaine>`) le couvre déjà.
 - Les instances de challenges ne peuvent pas joindre directement CTFd, MariaDB, Redis ni l'instancer ; elles ne voient que les mêmes points d'accès publics que les joueurs. Elles peuvent toujours joindre Traefik, les autres instances du réseau `challenges` et internet. Les challenges TCP tournent sur le réseau bridge par défaut de Docker.
 - Le provider Docker de Traefik utilise le réseau `challenges` par défaut, car les conteneurs déployés par Galvanize n'ont pas de label `traefik.docker.network`. Les services de la plateforme routés par Traefik (CTFd) doivent définir explicitement `traefik.docker.network=<COMPOSE_PROJECT_NAME>_proxy`.
+
+> **Mise à jour d'un déploiement existant** : arrêtez d'abord les instances de challenges en cours (elles sont rattachées à l'ancien réseau), puis relancez `setup.sh`. Cela réécrit `docker-compose.yml`, les configs Traefik, la config et les playbooks Galvanize, et remet `ZYNC_DEPLOYER_URL` à `https://instancer.<domaine>` (sauf si `--instancer-url` est fourni). Zync met en cache l'URL de l'instancer dans le navigateur de chaque joueur (`localStorage`) : faites la mise à jour entre deux événements, car les joueurs ayant déjà ouvert un challenge avec l'ancienne URL `:8080` continueront de l'utiliser jusqu'à ce que leurs données de site soient effacées.
 
 ## Structure du répertoire de déploiement
 

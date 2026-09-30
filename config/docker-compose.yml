@@ -59,7 +59,6 @@ services:
     ports:
       - "80:80"
       - "${HTTPS_PORT:-443}:443"
-      - "8080:8080"
       - "${TRAEFIK_DASHBOARD_PORT:-9090}:9090"
     volumes:
       # Static config — swap traefik-local.yml for local/IP deployments
@@ -123,16 +122,17 @@ services:
     profiles: [instancer]
     stop_grace_period: 1m
     stop_signal: SIGINT
+    # Zync calls the instancer from players' browsers, so it is public, on its own
+    # subdomain through Traefik (443, no extra port). /metrics is not routed.
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=${COMPOSE_PROJECT_NAME:-ctfd_infra}_proxy"
-      - "traefik.http.routers.instancer.rule=PathPrefix(`/`)"
-      - "traefik.http.routers.instancer.entrypoints=instancer"
+      - "traefik.http.routers.instancer.rule=Host(`${INSTANCER_DOMAIN:-}`) && !PathPrefix(`/metrics`)"
       - "traefik.http.routers.instancer.middlewares=security-headers@file"
       - "traefik.http.services.instancer.loadbalancer.server.port=8080"
     environment:
       - "DEVELOPMENT=${DEVELOPMENT:-false}"
-    entrypoint:
+    command:
       - "./galvanize"
       - "serve"
       - "--port"
@@ -154,8 +154,8 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - proxy
-      - internal
+      - proxy     # Traefik ingress + outbound SSH to the Ansible target host
+      - internal  # Redis
 
 networks:
   proxy:

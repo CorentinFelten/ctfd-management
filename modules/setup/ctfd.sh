@@ -104,8 +104,16 @@ install_ctfd() {
 
     setup_env_key CTFD_URL              "$ctfd_full_url"
 
-    # Instancer URL: use --instancer-url if provided, otherwise derive from local instancer
-    local instancer_url="${CONFIG[INSTANCER_URL]:-${scheme}://${CONFIG[DOMAIN]}:8080}"
+    # Instancer URL: use --instancer-url if provided, otherwise the local instancer,
+    # published by Traefik on its own subdomain. Zync calls it from players'
+    # browsers, so it must be publicly reachable.
+    local instancer_domain="instancer.${CONFIG[DOMAIN]}"
+    if is_ip_address "${CONFIG[DOMAIN]}"; then
+        # sslip.io wildcard DNS, same scheme Galvanize uses for challenge subdomains
+        instancer_domain="instancer.${CONFIG[DOMAIN]//:/-}.sslip.io"
+    fi
+    setup_env_key INSTANCER_DOMAIN      "$instancer_domain"
+    local instancer_url="${CONFIG[INSTANCER_URL]:-${scheme}://${instancer_domain}}"
     setup_env_key ZYNC_DEPLOYER_URL     "$instancer_url"
     setup_env_key ZYNC_JWT_SECRET       "$jwt_secret_key"
 
