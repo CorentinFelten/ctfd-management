@@ -111,7 +111,11 @@ Si vous utilisez l'option `--theme`, le script montera automatiquement le dossie
 Par défaut, `setup.sh` déploie Galvanize dans le même stack Docker Compose que CTFd. Deux alternatives sont disponibles :
 
 - **`--instancer-url URL`** — pointer CTFd vers une instance Galvanize déjà en cours d'exécution ; aucun conteneur local n'est démarré.
-- **`--no-instancer`** — ignorer Galvanize entièrement lors de l'installation. Vous pouvez le déployer indépendamment plus tard en utilisant le service instancer manuellement avec sa propre configuration (voir `config/galvanize/config.yaml` pour le modèle).
+- **`--no-instancer`** — ignorer Galvanize entièrement lors de l'installation. Vous pouvez le déployer indépendamment plus tard avec sa propre configuration (voir `config/galvanize/config.yaml` pour le modèle de configuration et `config/galvanize/playbooks/` pour les playbooks Ansible).
+
+### Playbooks Galvanize
+
+Les playbooks Ansible (`http`, `tcp`, `custom_compose`) sont fournis dans `config/galvanize/playbooks/` et copiés vers `deploy/data/galvanize/playbooks/` à chaque exécution du setup. Ce sont des copies du dossier [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/master/data/playbooks) de Galvanize (v0.7.1) : le montage `data/` masque les playbooks intégrés à l'image Galvanize, ils doivent donc se trouver sur l'hôte. Lors d'une mise à jour de Galvanize, recopiez ces fichiers depuis le dépôt amont.
 
 ## Structure du répertoire de déploiement
 
@@ -130,7 +134,11 @@ deploy/
 │   ├── CTFd/
 │   ├── mysql/
 │   ├── redis/
-│   └── galvanize/              # Config Galvanize et BDD SQLite (instancer local uniquement)
+│   └── galvanize/              # Données Galvanize (instancer local uniquement)
+│       ├── config.yaml         # Config Galvanize (depuis config/galvanize/config.yaml)
+│       ├── playbooks/          # Playbooks Ansible (depuis config/galvanize/playbooks/)
+│       ├── challenges/         # Dépôts de challenges indexés par Galvanize
+│       └── deployer.sqlite     # Base de données des déploiements Galvanize
 └── cron_backup.log             # Journal du cron de sauvegarde
 ```
 

@@ -1,0 +1,47 @@
+---
+- hosts: all
+  gather_facts: false
+  tasks:
+    - name: Build base service definition
+      ansible.builtin.set_fact:
+        _tcp_service:
+          image: "{{ image }}"
+          environment: "{{ env | default({}) }}"
+          network_mode: bridge
+          ports: "{{ published_ports }}"
+          restart: unless-stopped
+      tags:
+        - create
+        - delete
+
+    - name: Apply resource limits to service
+      ansible.builtin.set_fact:
+        _tcp_service: "{{ _tcp_service | combine(resource_overrides, recursive=True) }}"
+      when: resource_overrides is defined and resource_overrides | length > 0
+      tags:
+        - create
+        - delete
+
+    - name: Build compose definition
+      ansible.builtin.set_fact:
+        compose_definition:
+          services:
+            tcp: "{{ _tcp_service }}"
+          networks: "{{ {traefik_network: {'external': true}} }}"
+      tags:
+        - create
+        - delete
+
+    - name: Déploiement du docker-compose
+      community.docker.docker_compose_v2:
+        definition: "{{ compose_definition }}"
+        project_name: "{{ compose_project }}"
+        pull: missing
+      tags: create
+
+    - name: Arrêt et suppression du docker-compose
+      community.docker.docker_compose_v2:
+        definition: "{{ compose_definition }}"
+        project_name: "{{ compose_project }}"
+        state: absent
+      tags: delete

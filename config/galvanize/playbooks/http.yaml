@@ -1,0 +1,63 @@
+---
+- hosts: all
+  gather_facts: false
+  vars:
+    domain_name: "{{ compose_project }}.{{ domain_root }}"
+  tasks:
+    - name: Build base service definition
+      ansible.builtin.set_fact:
+        _web_service:
+          image: "{{ image }}"
+          environment: >-
+            {{
+              {
+                'ANSIBLE_DEPLOY_DOMAIN_NAME': domain_name
+              }
+              | combine(env | default({}))
+            }}
+          labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.site_{{ compose_project }}.rule=Host(`{{ domain_name }}`)"
+            - "traefik.http.services.site_{{ compose_project }}.loadbalancer.server.port={{ http_port | default(80) }}"
+          networks:
+            - "{{ traefik_network }}"
+          restart: unless-stopped
+      tags:
+        - create
+        - delete
+
+    - name: Apply resource limits to service
+      ansible.builtin.set_fact:
+        _web_service: "{{ _web_service | combine(resource_overrides, recursive=True) }}"
+      when: resource_overrides is defined and resource_overrides | length > 0
+      tags:
+        - create
+        - delete
+
+    - name: Build compose definition
+      ansible.builtin.set_fact:
+        compose_definition:
+          services:
+            web: "{{ _web_service }}"
+          networks: "{{ {traefik_network: {'external': true}} }}"
+      tags:
+        - create
+        - delete
+
+    - name: Déploiement du docker-compose
+      community.docker.docker_compose_v2:
+        definition: "{{ compose_definition }}"
+        project_name: "{{ compose_project }}"
+        pull: missing
+      tags: create
+
+    - name: Arrêt des conteneurs
+      ansible.builtin.command: "docker compose -p {{ compose_project }} kill"
+      tags: delete
+
+    - name: Arrêt et suppression du docker-compose
+      community.docker.docker_compose_v2:
+        definition: "{{ compose_definition }}"
+        project_name: "{{ compose_project }}"
+        state: absent
+      tags: delete

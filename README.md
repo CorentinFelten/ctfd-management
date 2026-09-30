@@ -111,7 +111,11 @@ If you use the `--theme` option, the script will automatically mount the custom 
 By default, `setup.sh` deploys Galvanize as part of the CTFd Docker Compose stack. Two alternatives are available:
 
 - **`--instancer-url URL`** — point CTFd at an already-running Galvanize instance; no local container is started.
-- **`--no-instancer`** — skip Galvanize entirely during setup. You can deploy it independently later by running the instancer service manually with its own config (see `config/galvanize/config.yaml` for the template).
+- **`--no-instancer`** — skip Galvanize entirely during setup. You can deploy it independently later with its own config (see `config/galvanize/config.yaml` for the config template and `config/galvanize/playbooks/` for the Ansible playbooks).
+
+### Galvanize playbooks
+
+The Ansible playbooks (`http`, `tcp`, `custom_compose`) are shipped in `config/galvanize/playbooks/` and copied to `deploy/data/galvanize/playbooks/` on every setup run. They are copies of Galvanize's upstream [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/master/data/playbooks) (v0.7.1): the `data/` bind mount hides the playbooks baked into the Galvanize image, so they must live on the host. When upgrading Galvanize, refresh these files from upstream.
 
 ## Deployment Directory Structure
 
@@ -130,7 +134,11 @@ deploy/
 │   ├── CTFd/
 │   ├── mysql/
 │   ├── redis/
-│   └── galvanize/              # Galvanize config and SQLite DB (local instancer only)
+│   └── galvanize/              # Galvanize data (local instancer only)
+│       ├── config.yaml         # Galvanize config (from config/galvanize/config.yaml)
+│       ├── playbooks/          # Ansible playbooks (from config/galvanize/playbooks/)
+│       ├── challenges/         # Challenge repositories indexed by Galvanize
+│       └── deployer.sqlite     # Galvanize deployment database
 └── cron_backup.log             # Backup cron job log
 ```
 
