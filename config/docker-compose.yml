@@ -54,8 +54,10 @@ services:
     security_opt:
       - no-new-privileges:true
     read_only: true
+    # Only the DNS-01 provider credentials (written by setup.sh), not the whole
+    # .env with the database passwords and application secrets
     env_file:
-      - .env
+      - traefik.env
     ports:
       - "80:80"
       - "${HTTPS_PORT:-443}:443"

@@ -156,6 +156,7 @@ deploy/
 ├── docker-compose.yml          # Active compose file (copied from repo)
 ├── .env                        # Environment variables and generated secrets
 ├── .secrets                    # Plaintext copy of generated secrets (chmod 600)
+├── traefik.env                 # DNS provider credentials, the only env Traefik gets (chmod 600)
 ├── traefik-config/             # Traefik static & dynamic configs, letsencrypt storage
 ├── ctfd/                       # CTFd Dockerfile and custom entrypoint
 │   └── plugins/zync/           # CTFd instancer plugin clone
@@ -483,6 +484,8 @@ The setup script automatically generates:
 - **Galvanize JWT secret** (48 characters)
 
 All secrets are written to `<deploy-dir>/.secrets` (chmod 600) and to `.env`.
+
+DNS provider credentials (for wildcard TLS certificates) are written to `<deploy-dir>/traefik.env` (chmod 600) instead. It is the only env file passed to the Traefik container, so Traefik never sees the database passwords, CTFd's `SECRET_KEY` or the Zync JWT secret. Deployments made before this change kept their DNS credentials in `.env`: re-running `setup.sh` copies them to `traefik.env`, after which they can be removed from `.env`.
 
 > **Re-running setup is safe**: if secrets already exist in `.env`, they are preserved. Only missing secrets are generated, so running `setup.sh` again will not break existing containers.
 

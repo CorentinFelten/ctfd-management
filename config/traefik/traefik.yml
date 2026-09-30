@@ -61,7 +61,7 @@ certificatesResolvers:
   letsencrypt:
     acme:
       email: "__ACME_EMAIL__"
-      # Set DNS_PROVIDER and its credentials in .env (see README).
+      # DNS_PROVIDER is patched in by setup.sh; its credentials live in traefik.env (see README).
       dnsChallenge:
         provider: "__DNS_PROVIDER__"
         resolvers:

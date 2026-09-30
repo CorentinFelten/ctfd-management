@@ -71,7 +71,7 @@ dns_list_providers() {
 # ── Interactive wizard ────────────────────────────────────────────────────────
 
 # Presents a menu of supported providers, prompts for credentials, validates
-# them, and writes them to .env via setup_env_key.
+# them, and writes them to Traefik's private env file (see lib/env.sh).
 # Sets CONFIG[DNS_PROVIDER] as a side effect.
 dns_setup_wizard() {
     local provider="${CONFIG[DNS_PROVIDER]:-}"
@@ -129,12 +129,15 @@ dns_setup_wizard() {
     read -ra required_vars <<< "$env_vars_csv"
 
     for var_name in "${required_vars[@]}"; do
-        # Check if already set in environment or .env
+        # Check if already set: environment, traefik.env, then .env, where
+        # deployments made before traefik.env existed kept their credentials
         var_value="${!var_name:-}"
-        if [[ -z "$var_value" ]]; then
-            var_value="$(grep "^${var_name}=" "${CONFIG[DEPLOY_DIR]:-${SCRIPT_DIR}}/.env" 2>/dev/null \
+        local candidate_file
+        for candidate_file in "$(traefik_env_file)" "${CONFIG[DEPLOY_DIR]}/.env"; do
+            [[ -n "$var_value" ]] && break
+            var_value="$(grep "^${var_name}=" "$candidate_file" 2>/dev/null \
                 | head -n1 | cut -d= -f2- | tr -d "'\"\r" || true)"
-        fi
+        done
 
         if [[ -n "$var_value" ]]; then
             local masked
@@ -157,22 +160,23 @@ dns_setup_wizard() {
             done
         fi
 
-        setup_env_key "$var_name" "$var_value"
+        setup_traefik_env_key "$var_name" "$var_value"
     done
 
     echo "" >&2
     log_success "DNS provider credentials configured for $display_name"
-    log_info "Credentials saved to .env — they will be passed to Traefik at runtime."
+    log_info "Credentials saved to $(traefik_env_file) (chmod 600) — only Traefik receives them."
     echo "" >&2
 }
 
 # ── Validation ────────────────────────────────────────────────────────────────
 
-# Checks that all required env vars for the configured provider are set in .env.
-# Returns 0 if valid, 1 if credentials are missing.
+# Checks that all required env vars for the configured provider are set in
+# Traefik's env file. Returns 0 if valid, 1 if credentials are missing.
 dns_validate_credentials() {
     local provider="${1:-${CONFIG[DNS_PROVIDER]:-cloudflare}}"
-    local env_file="${CONFIG[DEPLOY_DIR]:-${SCRIPT_DIR}}/.env"
+    local env_file
+    env_file="$(traefik_env_file)"
 
     if ! dns_provider_exists "$provider"; then
         log_error "Unknown DNS provider: $provider"
