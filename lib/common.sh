@@ -57,7 +57,9 @@ _run_cleanup() {
     for f in "${_cleanup_files[@]}"; do
         rm -rf "$f" 2>/dev/null || true
     done
-    rm -f /tmp/ctf_build_*.log /tmp/ctf_status_*.txt 2>/dev/null || true
+    # Build logs are not removed here: successful builds delete their own, and
+    # a failed build's log is what the error message points the user to.
+    rm -f /tmp/ctf_status_*.txt 2>/dev/null || true
     [[ -n "${_CHALL_YAML_CACHE_DIR:-}" ]] && rm -rf "$_CHALL_YAML_CACHE_DIR" 2>/dev/null || true
 
     if [[ "$_SCRIPT_COMPLETED" != "true" && $exit_code -ne 0 ]]; then
@@ -79,6 +81,26 @@ generate_password() {
     local raw
     raw="$(openssl rand -base64 256 | tr -d '+/=\n')"
     printf '%s' "${raw:0:length}"
+}
+
+# invoking_user_home — home directory of the user who ran the script (the sudo
+# caller when escalated), read from the passwd database. Running directly as
+# root therefore gives /root rather than a made-up /home/root.
+invoking_user_home() {
+    local user="${SUDO_USER:-${USER:-$(id -un)}}" home=""
+    if command -v getent &>/dev/null; then
+        home="$(getent passwd "$user" | cut -d: -f6)"
+    fi
+    # No passwd entry (or no getent, e.g. macOS): $HOME is right unless sudo changed it
+    [[ -z "$home" && -z "${SUDO_USER:-}" ]] && home="${HOME:-}"
+    printf '%s' "${home:-/home/$user}"
+}
+
+# sed_escape_replacement STRING — escape STRING for use as the replacement of
+# an `s|pattern|replacement|` sed command (backslash, the | delimiter and &,
+# which would otherwise insert the matched text).
+sed_escape_replacement() {
+    printf '%s' "$1" | sed -e 's/[\\|&]/\\&/g'
 }
 
 is_ip_address() {

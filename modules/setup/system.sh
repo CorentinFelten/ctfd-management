@@ -5,6 +5,16 @@
 [[ -n "${_SETUP_SYSTEM_LOADED:-}" ]] && return 0
 readonly _SETUP_SYSTEM_LOADED=1
 
+# os_codename — release codename (e.g. noble, bookworm, trixie) from
+# /etc/os-release, which every supported release ships (unlike lsb_release).
+os_codename() {
+    local codename
+    # shellcheck source=/dev/null
+    codename="$(. /etc/os-release && printf '%s' "${VERSION_CODENAME:-}")"
+    [[ -n "$codename" ]] || error_exit "Unable to determine the OS release codename from /etc/os-release."
+    printf '%s' "$codename"
+}
+
 identify_os() {
     if [[ -f /etc/os-release ]]; then
         # shellcheck source=/dev/null
@@ -26,18 +36,24 @@ update_system() {
     apt-get update -qq
     apt-get upgrade -y -qq
 
+    # Only what setup and challenges.sh actually use:
+    #   ca-certificates, curl, gnupg  Docker APT repo + key, yq download
+    #   git                           Zync plugin, themes, challenge repos
+    #   jq                            .env / compose parsing, CTFd API
+    #   python3-yaml                  YAML fallback parser for challenges.sh
+    #   openssl                       secret generation
+    #   openssh-client                Ansible SSH key generation
+    #   cron                          scheduled database backups
     DEBIAN_FRONTEND=noninteractive apt-get install -qq -y \
-        apt-transport-https \
         ca-certificates \
         curl \
-        software-properties-common \
-        net-tools \
-        zip \
+        gnupg \
         git \
         jq \
-        python3-pip \
         python3-yaml \
-        wget
+        openssl \
+        openssh-client \
+        cron
 
     log_success "System packages updated"
 

@@ -7,6 +7,39 @@ readonly _SETUP_CTFD_LOADED=1
 
 readonly DOCKER_PLUGIN_REPO="https://github.com/28Pollux28/zync"
 
+# _existing_secret DEPLOY_DIR ENV_KEY [SECRETS_KEY]
+#   Echoes a previously generated secret: from .env, or else from .secrets
+#   (the plaintext copy written at the end of every setup run), so a lost or
+#   recreated .env does not silently get fresh secrets. Placeholders from the
+#   .env templates do not count.
+_existing_secret() {
+    local deploy_dir="$1" key="$2" secrets_key="${3:-$2}" value=""
+    value="$(grep "^${key}=" "$deploy_dir/.env" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
+    [[ "$value" == "SecretKeyHere" ]] && value=""
+    if [[ -z "$value" && -f "$deploy_dir/.secrets" ]]; then
+        value="$(grep "^${secrets_key}=" "$deploy_dir/.secrets" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
+        [[ -n "$value" ]] && log_info "Recovered $key from $deploy_dir/.secrets"
+    fi
+    printf '%s' "$value"
+}
+
+# Number of config backups kept per kind (traefik-config, ctfd, compose file)
+readonly CONFIG_BACKUPS_KEPT=3
+
+# _prune_config_backups DEPLOY_DIR
+#   Keeps only the most recent config backups made by previous setup runs
+#   (their timestamped suffixes sort chronologically).
+_prune_config_backups() {
+    local deploy_dir="$1" prefix old
+    for prefix in traefik-config ctfd docker-compose.yml; do
+        while IFS= read -r old; do
+            [[ -n "$old" ]] || continue
+            rm -rf "$old"
+            log_debug "Removed old config backup: $old"
+        done < <(compgen -G "$deploy_dir/${prefix}.backup_*" | sort -r | tail -n +$((CONFIG_BACKUPS_KEPT + 1)))
+    done
+}
+
 install_ctfd() {
     local working_dir="${CONFIG[WORKING_DIR]}"
     local deploy_dir="${CONFIG[DEPLOY_DIR]}"
@@ -20,10 +53,19 @@ install_ctfd() {
     if [[ -f "$deploy_dir/docker-compose.yml" ]]; then
         local backup_suffix="backup_$(date +%Y%m%d_%H%M%S)"
         log_info "Existing deployment detected — backing up config files"
-        [[ -d "$deploy_dir/traefik-config" ]] && cp -r "$deploy_dir/traefik-config" "$deploy_dir/traefik-config.${backup_suffix}"
-        [[ -d "$deploy_dir/ctfd" ]]           && cp -r "$deploy_dir/ctfd" "$deploy_dir/ctfd.${backup_suffix}"
+        # Config only: the certificate store (setup never modifies it, and it
+        # holds private keys) and the plugin clones are left out
+        if [[ -d "$deploy_dir/traefik-config" ]]; then
+            cp -r "$deploy_dir/traefik-config" "$deploy_dir/traefik-config.${backup_suffix}"
+            rm -rf "$deploy_dir/traefik-config.${backup_suffix}/letsencrypt"
+        fi
+        if [[ -d "$deploy_dir/ctfd" ]]; then
+            cp -r "$deploy_dir/ctfd" "$deploy_dir/ctfd.${backup_suffix}"
+            rm -rf "$deploy_dir/ctfd.${backup_suffix}/plugins"
+        fi
         cp "$deploy_dir/docker-compose.yml" "$deploy_dir/docker-compose.yml.${backup_suffix}"
         log_success "Backed up existing configs with suffix: $backup_suffix"
+        _prune_config_backups "$deploy_dir"
     fi
 
     # Copy directory *contents* ("/."): with a plain `cp -r src dest`, an existing
@@ -50,7 +92,7 @@ install_ctfd() {
     local challenge_network="${compose_project_name}_challenges"
 
     local jwt_secret_key
-    jwt_secret_key="$(grep '^ZYNC_JWT_SECRET=' "$deploy_dir/.env" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
+    jwt_secret_key="$(_existing_secret "$deploy_dir" ZYNC_JWT_SECRET JWT_SECRET_KEY)"
     if [[ -n "$jwt_secret_key" ]]; then
         log_info "Existing JWT secret found — preserving it"
     else
@@ -61,30 +103,51 @@ install_ctfd() {
     log_info "Installing CTFd..."
 
     # ── Clone / update plugin ──
+    # A changed plugin needs a CTFd restart (plugins load at startup); the
+    # container entrypoint then reinstalls requirements if they changed.
+    local plugin_updated="false"
     mkdir -p "$deploy_dir/ctfd/plugins"
-    if [[ ! -d "$plugin_path" ]]; then
+    if [[ ! -d "$plugin_path/.git" ]]; then
         log_info "Cloning zync instancer plugin..."
         git -C "$deploy_dir/ctfd/plugins" clone "$DOCKER_PLUGIN_REPO"
     else
         log_info "Zync plugin already exists, updating..."
-        git -C "$plugin_path" pull origin main \
-            || log_warning "git pull failed for zync; continuing with existing code"
+        local rev_before rev_after
+        rev_before="$(git -C "$plugin_path" rev-parse HEAD)"
+        # Pull the branch the clone tracks (the repository default branch)
+        if git -C "$plugin_path" pull --ff-only --quiet; then
+            rev_after="$(git -C "$plugin_path" rev-parse HEAD)"
+            if [[ "$rev_before" != "$rev_after" ]]; then
+                plugin_updated="true"
+                log_success "Zync plugin updated: ${rev_before:0:7} → ${rev_after:0:7}"
+            else
+                log_info "Zync plugin already up to date (${rev_after:0:7})"
+            fi
+        else
+            log_warning "Could not fast-forward the zync plugin (local changes or diverged history?); keeping the current version"
+        fi
     fi
     log_success "Instancer plugin configuration complete"
 
     # ── Generate or reuse secrets ──
-    local env_file="$deploy_dir/.env"
     local secret_key db_password db_root_password
-    secret_key="$(grep '^SECRET_KEY=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
-    db_password="$(grep '^MARIADB_PASSWORD=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
-    db_root_password="$(grep '^MARIADB_ROOT_PASSWORD=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
+    secret_key="$(_existing_secret "$deploy_dir" SECRET_KEY)"
+    db_password="$(_existing_secret "$deploy_dir" MARIADB_PASSWORD)"
+    db_root_password="$(_existing_secret "$deploy_dir" MARIADB_ROOT_PASSWORD)"
 
-    # Only treat non-placeholder values as existing secrets
-    [[ "$secret_key" == "SecretKeyHere" ]] && secret_key=""
-    [[ "$db_password" == "SecretKeyHere" ]] && db_password=""
+    # MariaDB only applies its passwords when it initialises an empty data
+    # directory: new ones would lock CTFd (and backups) out of existing data
+    local mysql_data_dir="$deploy_dir/data/mysql"
+    if [[ ( -z "$db_password" || -z "$db_root_password" ) \
+          && -d "$mysql_data_dir" && -n "$(ls -A "$mysql_data_dir" 2>/dev/null)" ]]; then
+        error_exit "MariaDB data already exists in $mysql_data_dir, but its passwords were not found in $deploy_dir/.env or $deploy_dir/.secrets.
+  Generating new ones would lock CTFd out of the existing database. Either:
+    • restore MARIADB_PASSWORD and MARIADB_ROOT_PASSWORD in $deploy_dir/.env, or
+    • move $mysql_data_dir away to start with an empty database, then re-run setup."
+    fi
 
     if [[ -n "$secret_key" && -n "$db_password" && -n "$db_root_password" ]]; then
-        log_info "Existing secrets found in .env — preserving them"
+        log_info "Existing secrets found — preserving them"
     else
         log_info "Generating secure secrets..."
         [[ -z "$secret_key" ]]        && secret_key="$(generate_password 32)"
@@ -153,6 +216,14 @@ install_ctfd() {
     fi
     setup_env_key INSTANCER_MODE "$instancer_mode"
 
+    # Docker Compose reads COMPOSE_PROFILES from .env, so a manual
+    # `docker compose up -d`/`down`/`pull` in the deploy dir includes the
+    # instancer exactly when it runs locally. Rewritten on every run so it
+    # follows switches between local, external and no instancer.
+    local compose_profiles=""
+    [[ "$use_local_instancer" == "true" ]] && compose_profiles="instancer"
+    setup_env_key COMPOSE_PROFILES "$compose_profiles"
+
     # ── Traefik config selection + CA auto-switch ──
     # Operate on DEPLOY_DIR copies — never touch tracked repo files
     local traefik_cfg="$deploy_dir/traefik-config/traefik.yml"
@@ -218,16 +289,16 @@ install_ctfd() {
     # 2. Domain, DNS provider, and ACME email
     local domain="${CONFIG[DOMAIN]}"
     log_info "Patching Traefik production config with domain: $domain"
-    sed -i "s|__BASE_DOMAIN__|${domain}|g" "$traefik_cfg"
+    sed -i "s|__BASE_DOMAIN__|$(sed_escape_replacement "$domain")|g" "$traefik_cfg"
 
     local dns_provider="${CONFIG[DNS_PROVIDER]:-cloudflare}"
     log_info "Setting ACME DNS-01 challenge provider to: $dns_provider"
-    sed -i "s|__DNS_PROVIDER__|${dns_provider}|g" "$traefik_cfg"
+    sed -i "s|__DNS_PROVIDER__|$(sed_escape_replacement "$dns_provider")|g" "$traefik_cfg"
     setup_env_key DNS_PROVIDER "$dns_provider"
 
     local acme_email="${CONFIG[ACME_EMAIL]}"
     log_info "Setting ACME email to: $acme_email"
-    sed -i "s|__ACME_EMAIL__|${acme_email}|g" "$traefik_cfg"
+    sed -i "s|__ACME_EMAIL__|$(sed_escape_replacement "$acme_email")|g" "$traefik_cfg"
     setup_env_key ACME_EMAIL "$acme_email"
 
     log_success "Traefik wildcard TLS configuration complete (domain: $domain, provider: $dns_provider)"
@@ -262,9 +333,28 @@ install_ctfd() {
     fi
 
     # ── Start containers ──
+    # A previously local instancer is no longer wanted: stop and remove it,
+    # since `up -d` leaves containers of inactive profiles running.
+    if [[ "$use_local_instancer" != "true" ]]; then
+        docker compose -p "$compose_project_name" -f "$compose_file" --profile instancer \
+            rm --stop --force instancer >/dev/null 2>&1 || true
+    fi
+
     log_info "Starting CTFd containers..."
     "${compose_cmd[@]}" up -d
     log_success "CTFd containers started successfully"
+
+    if [[ "${CONFIG[ANSIBLE_KEY_REGENERATED]:-}" == "true" ]]; then
+        log_info "Recreating the instancer so it picks up the new Ansible SSH key..."
+        "${compose_cmd[@]}" up -d --force-recreate --no-deps instancer
+        log_success "Instancer recreated"
+    fi
+
+    if [[ "$plugin_updated" == "true" ]]; then
+        log_info "Restarting CTFd to load the updated zync plugin..."
+        "${compose_cmd[@]}" restart ctfd
+        log_success "CTFd restarted"
+    fi
     log_success "CTFd installation complete!"
     log_info ""
     log_info "CTFd is now available at: ${ctfd_full_url}"

@@ -53,20 +53,35 @@ setup_backup_cron() {
 
     local cron_entry="$cron_schedule DEPLOY_DIR=\"${CONFIG[DEPLOY_DIR]}\" $backup_script >> $cron_log 2>&1"
 
-    if crontab -u "$user" -l 2>/dev/null | grep -Fq "$backup_script"; then
-        log_warning "Cron job for backup script already exists, skipping..."
-        return 0
-    fi
+    local current_crontab
+    current_crontab="$(crontab -u "$user" -l 2>/dev/null || true)"
 
-    (crontab -u "$user" -l 2>/dev/null || true; echo "$cron_entry") | crontab -u "$user" -
+    local action="added"
+    if grep -Fxq -- "$cron_entry" <<< "$current_crontab"; then
+        action="unchanged"
+    else
+        # Replace any previous entry for this script (e.g. another schedule),
+        # keeping every unrelated crontab line as is
+        grep -Fq -- "$backup_script" <<< "$current_crontab" && action="updated"
+        {
+            [[ -n "$current_crontab" ]] && { printf '%s\n' "$current_crontab" | grep -vF -- "$backup_script" || true; }
+            printf '%s\n' "$cron_entry"
+        } | crontab -u "$user" -
+    fi
 
     touch "$cron_log"
     chown "$user:$user" "$cron_log"
 
+    local description
     case "$schedule" in
-        daily)  log_success "Cron job added: Daily backup at 4:00 AM"                   ;;
-        hourly) log_success "Cron job added: Hourly backups at the top of each hour"    ;;
-        10min)  log_success "Cron job added: Backups every 10 minutes"                  ;;
+        daily)  description="daily backup at 4:00 AM"               ;;
+        hourly) description="hourly backups at the top of each hour" ;;
+        10min)  description="backups every 10 minutes"              ;;
+    esac
+    case "$action" in
+        added)     log_success "Cron job added: $description" ;;
+        updated)   log_success "Cron job updated: $description" ;;
+        unchanged) log_info "Cron job already up to date: $description" ;;
     esac
     log_info "Backup logs will be written to: $cron_log"
 }

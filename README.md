@@ -53,7 +53,7 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 | Option                   | Description                                                                      | Required |
 |--------------------------|----------------------------------------------------------------------------------|----------|
 | `--domain domain/IP`     | URL/domain of your CTFd server                                                   | ✅ Yes   |
-| `--working-folder DIR`   | Working directory (default: `/home/$USER`)                                       | ❌ No    |
+| `--working-folder DIR`   | Working directory (default: your home directory, `/root` when run as root)     | ❌ No    |
 | `--theme DIR/URL`        | Enables the use of a personalised theme                                          | ❌ No    |
 | `--backup-schedule TYPE` | Database backup frequency (`daily` (default), `hourly`, `10min`)                 | ❌ No    |
 | `--instancer-url URL`    | Use an external Galvanize instancer instead of deploying one locally             | ❌ No    |
@@ -112,6 +112,8 @@ By default, `setup.sh` deploys Galvanize as part of the CTFd Docker Compose stac
 
 - **`--instancer-url URL`** — point CTFd at an already-running Galvanize instance; no local container is started.
 - **`--no-instancer`** — skip Galvanize entirely during setup. You can deploy it independently later with its own config (see `config/galvanize/config.yaml` for the config template and `config/galvanize/playbooks/` for the Ansible playbooks). `ZYNC_DEPLOYER_URL` defaults to `https://instancer.<domain>`; update it in `deploy/.env` if your instancer lives elsewhere.
+
+`setup.sh` records the choice in `deploy/.env` as `COMPOSE_PROFILES` (`instancer` for the bundled instancer, empty otherwise), so plain `docker compose up -d`, `down` or `pull` run from `deploy/` start and manage the instancer only when it is hosted locally. Switching away from the bundled instancer stops and removes its container on the next setup run.
 
 ### Galvanize configuration
 
@@ -227,7 +229,7 @@ subsequent runs, so you are only prompted once.
 |------------------------|-------------------------------------------------------------------------|----------|
 | `--repo REPO`          | Name of the challenge repository present in the working directory       | ✅ Yes   |
 | `--action ACTION`      | Action to perform (all (default), build, ingest, sync, status, cleanup) | ❌ No    |
-| `--working-folder DIR` | Working directory (default: `/home/$USER`)                              | ❌ No    |
+| `--working-folder DIR` | Working directory (default: your home directory)                        | ❌ No    |
 | `--config FILE`        | Load configuration from a file                                          | ❌ No    |
 
 ## Filtering Options

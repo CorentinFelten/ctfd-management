@@ -27,7 +27,7 @@ source "$SCRIPT_DIR/modules/setup/backup.sh"
 
 declare -A CONFIG=(
     [CONFIGURE_DOCKER]="true"
-    [WORKING_DIR]="/home/${SUDO_USER:-$USER}"
+    [WORKING_DIR]="$(invoking_user_home)"
     [DEPLOY_DIR]=""
     [THEME]=""
     [BACKUP_SCHEDULE]="daily"
@@ -47,7 +47,7 @@ Usage: $SCRIPT_NAME [OPTIONS]
 Options:
     -d, --domain URL          Set CTFd URL (mandatory)
                                 Note: IP addresses automatically enable --no-https
-    -w, --working-folder DIR    Set working directory (default: /home/\$USER)
+    -w, --working-folder DIR    Set working directory (default: your home directory)
     -t, --theme PATH_OR_URL     Path to local theme folder or Git URL to clone
     -b, --backup-schedule TYPE  Set backup schedule: daily, hourly, or 10min (default: daily)
     -i, --instancer-url URL     Use an external Galvanize instancer (skips local setup)

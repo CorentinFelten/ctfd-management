@@ -53,7 +53,7 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 | Option                   | Description                                                                               | Requis   |
 |--------------------------|-------------------------------------------------------------------------------------------|----------|
 | `--domain URL/IP`        | URL/domaine de votre serveur CTFd                                                         | ✅ Oui   |
-| `--working-folder DIR`   | Répertoire de travail (défaut : `/home/$USER`)                                            | ❌ Non   |
+| `--working-folder DIR`   | Répertoire de travail (défaut : votre répertoire personnel, `/root` en root)             | ❌ Non   |
 | `--theme DIR/URL`        | Permet l'utilisation d'un thème personnalisé                                              | ❌ Non   |
 | `--backup-schedule TYPE` | Fréquence des sauvegardes (`daily` (défaut), `hourly`, `10min`)                           | ❌ Non   |
 | `--instancer-url URL`    | Utiliser un instancer Galvanize externe plutôt que d'en déployer un localement            | ❌ Non   |
@@ -112,6 +112,8 @@ Par défaut, `setup.sh` déploie Galvanize dans le même stack Docker Compose qu
 
 - **`--instancer-url URL`** — pointer CTFd vers une instance Galvanize déjà en cours d'exécution ; aucun conteneur local n'est démarré.
 - **`--no-instancer`** — ignorer Galvanize entièrement lors de l'installation. Vous pouvez le déployer indépendamment plus tard avec sa propre configuration (voir `config/galvanize/config.yaml` pour le modèle de configuration et `config/galvanize/playbooks/` pour les playbooks Ansible). `ZYNC_DEPLOYER_URL` vaut `https://instancer.<domaine>` par défaut ; modifiez-le dans `deploy/.env` si votre instancer est ailleurs.
+
+`setup.sh` enregistre ce choix dans `deploy/.env` via `COMPOSE_PROFILES` (`instancer` pour l'instancer intégré, vide sinon) : un simple `docker compose up -d`, `down` ou `pull` lancé depuis `deploy/` ne démarre et ne gère l'instancer que s'il est hébergé localement. Abandonner l'instancer intégré arrête et supprime son conteneur à la prochaine exécution du setup.
 
 ### Configuration de Galvanize
 
@@ -232,7 +234,7 @@ seule fois.
 |------------------------|--------------------------------------------------------------------------------------|---------|
 | `--repo REPO`          | Nom du dépôt de challenges présent dans le répertoire de travail                     | ✅ Oui  |
 | `--action ACTION`      | Action à effectuer (all (défaut), build, ingest, sync, status, cleanup)              | ❌ Non  |
-| `--working-folder DIR` | Répertoire de travail (défaut : `/home/$USER`)                                       | ❌ Non  |
+| `--working-folder DIR` | Répertoire de travail (défaut : votre répertoire personnel)                          | ❌ Non  |
 | `--config FILE`        | Charger une configuration depuis un fichier                                          | ❌ Non  |
 
 ## Options de filtrage
