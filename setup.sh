@@ -60,6 +60,9 @@ Options:
                                 (required for HTTPS deployments)
         --no-https              Disable HTTPS configuration for CTFd
                                 (automatically enabled for IP addresses)
+    -y, --yes                   Answer every prompt with its default, for unattended
+                                runs (recreates the Ansible SSH key pair on re-runs;
+                                DNS credentials must already be in traefik.env)
     -h, --help                  Show this help message
 
 Directory structure:
@@ -80,6 +83,7 @@ Examples:
     $SCRIPT_NAME --domain example.com --theme https://github.com/user/theme.git
     $SCRIPT_NAME --domain example.com --acme-email admin@example.com
     $SCRIPT_NAME --domain example.com --backup-schedule hourly
+    $SCRIPT_NAME --domain 192.168.1.100 --yes
 EOF
 }
 
@@ -119,6 +123,8 @@ parse_arguments() {
                 CONFIG[NO_HTTPS]="true"
                 CONFIG[DOCKER_ENV_FILE]="env.local"
                 shift ;;
+            -y|--yes)
+                _ASSUME_YES="true"; shift ;;
             -h|--help) show_usage; exit 0 ;;
             *)      error_exit "Unknown parameter: $1" ;;
         esac
@@ -134,6 +140,13 @@ parse_arguments() {
     CONFIG[DOMAIN]="${CONFIG[DOMAIN]#https://}"
     CONFIG[DOMAIN]="${CONFIG[DOMAIN]#http://}"
     CONFIG[DOMAIN]="${CONFIG[DOMAIN]%%/*}"
+
+    if is_loopback_or_unspecified "${CONFIG[DOMAIN]}"; then
+        error_exit "--domain ${CONFIG[DOMAIN]} is a loopback address. Use this server's real IP address or domain name instead.
+  Players must reach CTFd at this address, and the Galvanize instancer connects
+  to it over SSH from inside its container, where ${CONFIG[DOMAIN]} is the container itself.
+  This server's primary IP address is usually given by: ip -4 route get 1.1.1.1"
+    fi
 
     CONFIG[DEPLOY_DIR]="${CONFIG[WORKING_DIR]}/deploy"
 

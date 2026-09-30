@@ -15,7 +15,10 @@ create_and_set_owner() {
     mkdir -p "$deploy_dir/data/galvanize/challenges"
     mkdir -p "$deploy_dir/data/galvanize/playbooks"
 
-    chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$deploy_dir/data"
+    # Not recursive: on re-runs data/ also holds data/mysql and data/redis,
+    # owned by the MariaDB and Redis container users. Re-owning them locks
+    # the running database out of its own files until it restarts.
+    chown "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$deploy_dir/data" "$deploy_dir/data/CTFd"
 
     # CTFd runs as UID 1001 inside the container
     chown -R 1001:1001 "$deploy_dir/data/CTFd/uploads"

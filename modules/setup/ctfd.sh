@@ -75,9 +75,12 @@ install_ctfd() {
     cp -r "$SCRIPT_DIR/config/traefik/." "$deploy_dir/traefik-config/"
     cp -r "$SCRIPT_DIR/config/ctfd/."    "$deploy_dir/ctfd/"
     cp    "$SCRIPT_DIR/config/docker-compose.yml" "$deploy_dir/docker-compose.yml"
-    chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$deploy_dir"
-    [[ -d "$deploy_dir/data/CTFd/uploads" ]] && chown -R 1001:1001 "$deploy_dir/data/CTFd/uploads"
-    [[ -d "$deploy_dir/data/CTFd/logs" ]]    && chown -R 1001:1001 "$deploy_dir/data/CTFd/logs"
+    # Everything but data/, whose ownership create_and_set_owner and the
+    # containers manage: a recursive chown of data/ on a re-run would hand
+    # MariaDB's and Redis's files to the invoking user.
+    chown "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$deploy_dir"
+    find "$deploy_dir" -mindepth 1 -maxdepth 1 ! -name data \
+        -exec chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" {} +
     log_success "Config templates copied to deploy dir"
 
     local compose_file="$deploy_dir/docker-compose.yml"

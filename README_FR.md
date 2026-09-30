@@ -61,9 +61,14 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 | `--dns-provider NAME`    | Fournisseur DNS pour les certificats TLS wildcard (défaut : `cloudflare`)                 | ❌ Non   |
 | `--acme-email EMAIL`     | Adresse email pour les certificats Let's Encrypt (requis pour HTTPS)                      | ✅ HTTPS |
 | `--no-https`             | Déploiement sans HTTPS (activé automatiquement pour les adresses IP)                     | ❌ Non   |
+| `--yes`                  | Répondre à chaque question par sa valeur par défaut, pour une exécution sans surveillance | ❌ Non   |
 | `--help`                 | Afficher l'aide                                                                           | ❌ Non   |
 
 > `--instancer-url` et `--no-instancer` sont mutuellement exclusifs.
+>
+> `--domain` doit être une adresse joignable par les joueurs : les adresses de loopback (`127.0.0.1`, `localhost`, `::1`) et `0.0.0.0` sont refusées. L'instancer Galvanize se connecte aussi à cette adresse en SSH depuis son conteneur, où une adresse de loopback désigne le conteneur lui-même. Pour un déploiement par IP, utilisez l'IP réelle du serveur (`ip -4 route get 1.1.1.1` l'affiche).
+
+> **Exécution sans surveillance (`--yes`)** : chaque question prend sa réponse par défaut. Lors d'une réexécution, la paire de clés SSH Ansible est donc recréée (le conteneur de l'instancer est recréé pour la prendre en compte). L'assistant DNS ne peut pas demander les identifiants : pour un déploiement HTTPS, ils doivent déjà se trouver dans `deploy/traefik.env`, ou être passés dans l'environnement root (`sudo CF_DNS_API_TOKEN=... ./setup.sh ... --yes`). Sans `--yes`, une question posée sans terminal (CI, cron) échoue avec un message indiquant `--yes`.
 
 ## Exemples d'installation
 
@@ -131,7 +136,7 @@ Autres valeurs par défaut : les ports hôtes TCP sont tirés au hasard pour cha
 
 ### Playbooks Galvanize
 
-Les playbooks Ansible (`http`, `tcp`, `custom_compose`) sont fournis dans `config/galvanize/playbooks/` et copiés vers `deploy/data/galvanize/playbooks/` à chaque exécution du setup. Ce sont des copies du dossier [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/master/data/playbooks) de Galvanize (v0.7.1) : le montage `data/` masque les playbooks intégrés à l'image Galvanize, ils doivent donc se trouver sur l'hôte. Lors d'une mise à jour de Galvanize, recopiez ces fichiers depuis le dépôt amont.
+Les playbooks Ansible (`http`, `tcp`, `custom_compose`) sont fournis dans `config/galvanize/playbooks/` et copiés vers `deploy/data/galvanize/playbooks/` à chaque exécution du setup. Ce sont des copies du dossier [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/master/data/playbooks) de Galvanize (v0.7.1) : le montage `data/` masque les playbooks intégrés à l'image Galvanize, ils doivent donc se trouver sur l'hôte. Ils diffèrent de l'amont sur un point : une tâche « Normalise resource limits for Docker Compose » déplace la limite de PID de `pids_limit` vers `deploy.resources.limits.pids`, car Docker Compose 2.38+ refuse un service qui définit `pids_limit` à côté de `deploy.resources.limits`, ce qui fait échouer chaque déploiement avec les limites par défaut. Lors d'une mise à jour de Galvanize, recopiez ces fichiers depuis le dépôt amont en conservant cette tâche, sauf si l'amont a corrigé le problème.
 
 ### Isolation réseau
 
@@ -495,6 +500,18 @@ Tous les secrets sont écrits dans `<deploy-dir>/.secrets` (chmod 600) et dans `
 Les identifiants du fournisseur DNS (pour les certificats TLS wildcard) sont écrits dans `<deploy-dir>/traefik.env` (chmod 600). C'est le seul fichier d'environnement transmis au conteneur Traefik : Traefik ne voit donc jamais les mots de passe de la base de données, la `SECRET_KEY` de CTFd ni le secret JWT de Zync. Les déploiements antérieurs à ce changement conservaient leurs identifiants DNS dans `.env` : relancer `setup.sh` les copie dans `traefik.env`, après quoi ils peuvent être retirés de `.env`.
 
 > **Relancer le setup est sans risque** : si des secrets existent déjà dans `.env`, ils sont préservés. Seuls les secrets manquants sont générés, donc relancer `setup.sh` ne cassera pas les conteneurs existants.
+
+## Intégration continue
+
+`.github/workflows/setup-e2e.yml` s'exécute à chaque push (sauf changements de documentation uniquement) et peut être lancé manuellement depuis l'onglet Actions. Sur un runner Ubuntu 24.04 neuf, il :
+
+1. vérifie que `setup.sh` refuse un `--domain` de loopback ;
+2. exécute `./setup.sh --domain <IP du runner> --yes`, soit un déploiement sans HTTPS avec l'instancer Galvanize intégré ;
+3. vérifie la stack (`.github/scripts/setup-e2e/check-stack.sh`) : santé des conteneurs, routage Traefik vers CTFd et l'instancer, `.env` et configuration Galvanize générés, accès SSH d'Ansible, tâche cron et exécution d'une sauvegarde ;
+4. déploie puis arrête une instance de challenge via l'API Galvanize avec un JWT comme celui de Zync (`deploy-challenge.sh`), en y accédant en HTTPS via Traefik ;
+5. réexécute `setup.sh --yes`, vérifie que les secrets n'ont pas changé, puis refait les vérifications et le déploiement avec la clé SSH recréée.
+
+En cas d'échec, les logs des conteneurs et les configurations expurgées sont publiés dans l'artefact `setup-e2e-diagnostics`. Le mode HTTPS (certificats DNS-01) et Debian ne sont pas couverts.
 
 ---
 

@@ -96,6 +96,10 @@ dns_setup_wizard() {
         dns_list_providers >&2
         echo "" >&2
 
+        [[ "$_ASSUME_YES" == "true" ]] \
+            && error_exit "Unknown DNS provider '${provider}' and --yes was given: pass --dns-provider with one of the providers above."
+        require_terminal "a DNS provider"
+
         local choice
         while true; do
             read -rp "Select provider [1-${#DNS_PROVIDERS[@]}] (default: 1 = cloudflare): " choice
@@ -143,14 +147,18 @@ dns_setup_wizard() {
             local masked
             masked="$(printf '%s' "$var_value" | sed 's/./*/g; s/\(.\{4\}\)$//' | head -c 20)$(printf '%s' "$var_value" | tail -c 4)"
             log_info "$var_name is already set (${masked})"
-            read -rp "Keep current value? [Y/n]: " -n 1 keep
-            echo >&2
-            if [[ "$keep" =~ ^[Nn]$ ]]; then
+            if ! ask_yes_no "Keep current value?" y; then
                 var_value=""
             fi
         fi
 
         if [[ -z "$var_value" ]]; then
+            if [[ "$_ASSUME_YES" == "true" ]]; then
+                error_exit "$var_name is not set and --yes was given, so it cannot be asked for.
+  Write it to $(traefik_env_file) first, or pass it in the environment of the root shell:
+    sudo ${var_name}=... ./setup.sh ..."
+            fi
+            require_terminal "$var_name"
             while true; do
                 # -s: credentials are not echoed to the terminal
                 read -rsp "  $var_name: " var_value

@@ -1,0 +1,113 @@
+name: Setup end-to-end
+
+# Runs setup.sh for real on a fresh runner (no-HTTPS mode, local Galvanize
+# instancer), checks the resulting stack, deploys a challenge instance through
+# Galvanize, then re-runs setup to check that re-runs are safe.
+
+on:
+  push:
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+  workflow_dispatch:
+
+concurrency:
+  group: setup-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  setup-no-https:
+    name: setup.sh --no-https (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      E2E: .github/scripts/setup-e2e
+    steps:
+      - uses: actions/checkout@v7
+
+      # setup.sh expects a server that already runs sshd: Galvanize deploys
+      # challenges with Ansible over SSH to the --domain address.
+      - name: Prepare the runner as a server
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server
+          sudo systemctl enable --now ssh
+          server_ip="$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
+          [[ -n "$server_ip" ]] || { echo "::error::Could not determine the runner's IP address"; exit 1; }
+          echo "SERVER_IP=$server_ip" >> "$GITHUB_ENV"
+          echo "DEPLOY_DIR=$HOME/deploy" >> "$GITHUB_ENV"
+          echo "Server IP: $server_ip"
+
+      - name: setup.sh rejects a loopback --domain
+        run: |
+          if output="$(./setup.sh --domain 127.0.0.1 --yes 2>&1)"; then
+            echo "$output"
+            echo "::error::setup.sh accepted --domain 127.0.0.1"
+            exit 1
+          fi
+          echo "$output"
+          grep -q "loopback address" <<< "$output"
+
+      # stdin is /dev/null so any prompt that --yes misses fails the run
+      - name: Run setup.sh
+        run: ./setup.sh --domain "$SERVER_IP" --working-folder "$HOME" --yes < /dev/null
+
+      - name: Check the stack
+        run: bash "$E2E/check-stack.sh"
+
+      - name: Deploy a challenge through Galvanize
+        run: bash "$E2E/deploy-challenge.sh" ci-team-1
+
+      - name: Re-run setup.sh
+        run: |
+          grep -v '^#' "$DEPLOY_DIR/.secrets" > "$RUNNER_TEMP/secrets.before"
+          sha256sum "$DEPLOY_DIR/ansible-ssh/ansible_rsa.pub" > "$RUNNER_TEMP/key.before"
+
+          ./setup.sh --domain "$SERVER_IP" --working-folder "$HOME" --yes < /dev/null
+
+          grep -v '^#' "$DEPLOY_DIR/.secrets" | diff -u "$RUNNER_TEMP/secrets.before" - \
+            || { echo "::error::Re-running setup.sh changed the generated secrets"; exit 1; }
+          # --yes takes the default answer, which recreates the Ansible key pair
+          if sha256sum -c --quiet "$RUNNER_TEMP/key.before" 2>/dev/null; then
+            echo "::error::Re-running setup.sh --yes did not recreate the Ansible SSH key pair"
+            exit 1
+          fi
+
+      - name: Check the stack after the re-run
+        run: bash "$E2E/check-stack.sh"
+
+      - name: Deploy a challenge with the recreated SSH key
+        run: bash "$E2E/deploy-challenge.sh" ci-team-2
+
+      - name: Collect diagnostics
+        if: failure()
+        run: |
+          diag="$RUNNER_TEMP/diagnostics"
+          mkdir -p "$diag"
+          docker ps -a > "$diag/docker-ps.txt" 2>&1 || true
+          if [[ -f "$DEPLOY_DIR/docker-compose.yml" ]]; then
+            (cd "$DEPLOY_DIR" && docker compose logs --no-color --timestamps) > "$diag/compose.log" 2>&1 || true
+            cp "$DEPLOY_DIR/docker-compose.yml" "$diag/" || true
+            sudo cp -r "$DEPLOY_DIR/traefik-config" "$diag/" && sudo rm -rf "$diag/traefik-config/letsencrypt" || true
+          fi
+          for c in $(docker ps -aq --filter "label=com.docker.compose.project" --filter "network=ctfd_infra_challenges"); do
+            docker logs "$c" > "$diag/instance-$c.log" 2>&1 || true
+          done
+          # Secrets are throwaway, but keep them out of the artifact anyway
+          sudo sed -E 's/^((SECRET_KEY|MARIADB_PASSWORD|MARIADB_ROOT_PASSWORD|ZYNC_JWT_SECRET)=).*/\1***/' \
+            "$DEPLOY_DIR/.env" > "$diag/env.redacted" 2>/dev/null || true
+          sudo sed -E 's/^(\s*jwt_secret:).*/\1 "***"/' \
+            "$DEPLOY_DIR/data/galvanize/config.yaml" > "$diag/galvanize-config.redacted.yaml" 2>/dev/null || true
+          sudo journalctl -u ssh --no-pager -n 200 > "$diag/sshd.log" 2>&1 || true
+          sudo chown -R "$USER" "$diag"
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: setup-e2e-diagnostics
+          path: ${{ runner.temp }}/diagnostics
+          if-no-files-found: ignore

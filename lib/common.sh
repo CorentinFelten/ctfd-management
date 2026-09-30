@@ -71,6 +71,43 @@ _run_cleanup() {
 }
 trap _run_cleanup EXIT INT TERM
 
+# ── Prompts ──────────────────────────────────────────────────────────────────
+
+# Set to "true" by --yes: every prompt takes its default answer.
+_ASSUME_YES="${_ASSUME_YES:-false}"
+
+# require_terminal WHAT — exit with a clear message when a prompt cannot be
+# shown (no terminal on stdin, e.g. CI or cron), instead of letting `read`
+# hit end of input and trip `set -e`.
+require_terminal() {
+    [[ -t 0 ]] && return 0
+    error_exit "Cannot ask for $1: no terminal is attached. Re-run with --yes to accept the default answers."
+}
+
+# ask_yes_no QUESTION DEFAULT — DEFAULT is y or n. Returns 0 for yes.
+# With --yes the default is taken without asking.
+ask_yes_no() {
+    local question="$1" default="${2,,}" hint reply
+    [[ "$default" == "y" ]] && hint="[Y/n]" || hint="[y/N]"
+
+    if [[ "$_ASSUME_YES" == "true" ]]; then
+        log_info "$question $hint → $default (--yes)"
+        [[ "$default" == "y" ]]
+        return
+    fi
+
+    require_terminal "\"$question\""
+    while true; do
+        read -rp "$question $hint " -n 1 reply || reply=""
+        [[ -n "$reply" ]] && echo >&2
+        case "${reply:-$default}" in
+            [Yy]) return 0 ;;
+            [Nn]) return 1 ;;
+        esac
+        log_warning "Please answer y or n."
+    done
+}
+
 # ── Utility helpers ──────────────────────────────────────────────────────────
 
 generate_password() {
@@ -123,6 +160,18 @@ is_ip_address() {
     fi
 
     return 1
+}
+
+# is_loopback_or_unspecified HOST — true for localhost names, 127.0.0.0/8,
+# ::1 and the unspecified addresses 0.0.0.0 / ::, none of which name this
+# server from anywhere else (players, or containers on this host).
+is_loopback_or_unspecified() {
+    local host="${1,,}"
+    host="${host#[}"; host="${host%]}"
+
+    [[ "$host" == "localhost" || "$host" == *.localhost ]] && return 0
+    [[ "$host" == "0.0.0.0" || "$host" == "::" || "$host" == "::1" ]] && return 0
+    is_ip_address "$host" && [[ "$host" == 127.* ]]
 }
 
 is_git_url() {
