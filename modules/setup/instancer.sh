@@ -83,7 +83,8 @@ configure_instancer() {
     compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${CONFIG[DEPLOY_DIR]}/.env" 2>/dev/null \
         | head -n1 | cut -d= -f2- | tr -d "'\"\r")"
     compose_project_name="${compose_project_name:-ctfd_infra}"
-    local docker_proxy_network="${compose_project_name}_proxy"
+    # Dedicated network shared only by challenge instances and Traefik
+    local challenge_network="${compose_project_name}_challenges"
 
     yq -i ".auth.jwt_secret = \"${CONFIG[JWT_SECRET_KEY]}\"" "$config_path"
     yq -i ".instancer.ansible.user = \"${ANSIBLE_USER}\"" "$config_path"
@@ -96,7 +97,9 @@ configure_instancer() {
     fi
     yq -i ".instancer.instancer_host = \"${instancer_host}\"" "$config_path"
     yq -i ".instancer.redis.addr = \"redis:6379\"" "$config_path"
-    yq -i "del(.instancer.extra_deployment_parameters) | .instancer.extra_deployment_parameters.traefik_network = \"${docker_proxy_network}\"" "$config_path"
+    # CTFd uses Redis db 0; keep Galvanize's job queue in its own db
+    yq -i ".instancer.redis.db = 1" "$config_path"
+    yq -i ".instancer.extra_deployment_parameters.traefik_network = \"${challenge_network}\"" "$config_path"
 
     log_success "Local instancer setup complete"
 }

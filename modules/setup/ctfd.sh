@@ -26,8 +26,12 @@ install_ctfd() {
         log_success "Backed up existing configs with suffix: $backup_suffix"
     fi
 
-    cp -r "$SCRIPT_DIR/config/traefik" "$deploy_dir/traefik-config"
-    cp -r "$SCRIPT_DIR/config/ctfd"    "$deploy_dir/ctfd"
+    # Copy directory *contents* ("/."): with a plain `cp -r src dest`, an existing
+    # dest would receive a nested src/ subfolder and the live configs would never
+    # be refreshed on re-runs. letsencrypt/ and plugins/ are left untouched.
+    mkdir -p "$deploy_dir/traefik-config" "$deploy_dir/ctfd"
+    cp -r "$SCRIPT_DIR/config/traefik/." "$deploy_dir/traefik-config/"
+    cp -r "$SCRIPT_DIR/config/ctfd/."    "$deploy_dir/ctfd/"
     cp    "$SCRIPT_DIR/config/docker-compose.yml" "$deploy_dir/docker-compose.yml"
     chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$deploy_dir"
     [[ -d "$deploy_dir/data/CTFd/uploads" ]] && chown -R 1001:1001 "$deploy_dir/data/CTFd/uploads"
@@ -42,7 +46,8 @@ install_ctfd() {
     compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${deploy_dir}/.env" \
         | head -n1 | cut -d= -f2- | tr -d "'\"\r" || true)"
     compose_project_name="${compose_project_name:-ctfd_infra}"
-    local docker_proxy_network="${compose_project_name}_proxy"
+    # Traefik's default Docker network: the one Galvanize attaches challenges to
+    local challenge_network="${compose_project_name}_challenges"
 
     local jwt_secret_key
     jwt_secret_key="$(grep '^ZYNC_JWT_SECRET=' "$deploy_dir/.env" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
@@ -99,8 +104,16 @@ install_ctfd() {
 
     setup_env_key CTFD_URL              "$ctfd_full_url"
 
-    # Instancer URL: use --instancer-url if provided, otherwise derive from local instancer
-    local instancer_url="${CONFIG[INSTANCER_URL]:-${scheme}://${CONFIG[DOMAIN]}:8080}"
+    # Instancer URL: use --instancer-url if provided, otherwise the local instancer,
+    # published by Traefik on its own subdomain. Zync calls it from players'
+    # browsers, so it must be publicly reachable.
+    local instancer_domain="instancer.${CONFIG[DOMAIN]}"
+    if is_ip_address "${CONFIG[DOMAIN]}"; then
+        # sslip.io wildcard DNS, same scheme Galvanize uses for challenge subdomains
+        instancer_domain="instancer.${CONFIG[DOMAIN]//:/-}.sslip.io"
+    fi
+    setup_env_key INSTANCER_DOMAIN      "$instancer_domain"
+    local instancer_url="${CONFIG[INSTANCER_URL]:-${scheme}://${instancer_domain}}"
     setup_env_key ZYNC_DEPLOYER_URL     "$instancer_url"
     setup_env_key ZYNC_JWT_SECRET       "$jwt_secret_key"
 
@@ -114,12 +127,31 @@ install_ctfd() {
 
         mkdir -p "$deploy_dir/data/galvanize"
         cp "$SCRIPT_DIR/config/galvanize/config.yaml" "$instancer_config_path"
+
+        # Ansible playbooks are shipped with this repo (config/galvanize/playbooks)
+        # rather than extracted from the Galvanize image. The data/ bind mount
+        # hides the playbooks baked into the image, so they must live on the host.
+        local playbooks_dir="$deploy_dir/data/galvanize/playbooks"
+        mkdir -p "$playbooks_dir"
+        cp "$SCRIPT_DIR"/config/galvanize/playbooks/*.yaml "$playbooks_dir/"
+        log_success "Galvanize playbooks copied to: $playbooks_dir"
+
         chown -R 1000:1000 "$deploy_dir/data/galvanize"
 
         setup_env_key GALVANIZE_CONFIG_PATH "$instancer_config_path"
 
         setup_instancer
     fi
+
+    # Recorded for challenges.sh: challenge images only need to be built on
+    # this host when Galvanize deploys here (see is_local_instancer).
+    local instancer_mode="local"
+    if [[ -n "${CONFIG[INSTANCER_URL]:-}" ]]; then
+        instancer_mode="external"
+    elif [[ -n "${CONFIG[NO_INSTANCER]:-}" ]]; then
+        instancer_mode="none"
+    fi
+    setup_env_key INSTANCER_MODE "$instancer_mode"
 
     # ── Traefik config selection + CA auto-switch ──
     # Operate on DEPLOY_DIR copies — never touch tracked repo files
@@ -169,11 +201,13 @@ install_ctfd() {
     mkdir -p "$deploy_dir/traefik-config/letsencrypt"
 
     # ── Patch Traefik static configs with runtime values ──
-    log_info "Setting Traefik Docker provider network to: $docker_proxy_network"
+    log_info "Setting Traefik Docker provider network to: $challenge_network"
     local traefik_file
     for traefik_file in "$traefik_cfg" "$traefik_local_cfg"; do
         if [[ -f "$traefik_file" ]]; then
-            sed -i "s|network:.*_proxy|network: ${docker_proxy_network}|" "$traefik_file"
+            # Match any value (the files hold a single `network:` key) so that
+            # configs from older deployments pointing at *_proxy are fixed too
+            sed -i "s|^\([[:space:]]*\)network:.*|\1network: ${challenge_network}|" "$traefik_file"
         fi
     done
     log_success "Traefik network configuration updated"
@@ -206,29 +240,6 @@ install_ctfd() {
     log_info "Pulling pre-built images (traefik, mariadb, redis${use_local_instancer:+, galvanize})..."
     "${compose_cmd[@]}" pull -q
     log_success "Docker images successfully pulled"
-
-    # ── Extract playbooks from galvanize image ──
-    if [[ "$use_local_instancer" == "true" ]]; then
-        local playbooks_dir="$deploy_dir/data/galvanize/playbooks"
-        if [[ ! -d "$playbooks_dir" ]] || [[ -z "$(ls -A "$playbooks_dir" 2>/dev/null)" ]]; then
-            log_info "Extracting playbooks from galvanize image..."
-            mkdir -p "$playbooks_dir"
-            local galvanize_image
-            galvanize_image="$(yq '.services.instancer.image' "$compose_file" 2>/dev/null)"
-            if [[ -n "$galvanize_image" && "$galvanize_image" != "null" ]]; then
-                docker create --name galvanize-extract "$galvanize_image" >/dev/null 2>&1
-                docker cp galvanize-extract:/app/data/playbooks/. "$playbooks_dir/" 2>/dev/null \
-                    && log_success "Playbooks extracted to: $playbooks_dir" \
-                    || log_warning "Could not extract playbooks from galvanize image"
-                docker rm galvanize-extract >/dev/null 2>&1
-                chown -R 1000:1000 "$playbooks_dir"
-            else
-                log_warning "Could not determine galvanize image name — skipping playbook extraction"
-            fi
-        else
-            log_info "Playbooks directory already populated, skipping extraction"
-        fi
-    fi
 
     # ── Custom theme ──
     if [[ -n "${CONFIG[THEME]}" ]]; then

@@ -44,9 +44,9 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 3. **Accéder à l'URL du serveur configuré**
    - Configurer l'événement CTF
    - Naviguer vers le panneau de configuration administrateur : `Admin Panel` --> `Plugins` --> `Zync Config`
-   - Entrer l'URL de votre instancer Galvanize et le secret JWT généré par le script d'installation
+   - Vérifier l'URL de l'instancer Galvanize et le secret JWT (tous deux pré-remplis par le script d'installation, voir ci-dessous)
 
-   > **Secret JWT** : si vous utilisez le workflow d'installation fourni, le secret JWT généré est injecté automatiquement dans le conteneur CTFd via la variable d'environnement `ZYNC_JWT_SECRET` (depuis `deploy/.env`), et le même secret est écrit dans la configuration de Galvanize. Vous n'avez donc pas besoin de saisir le secret JWT manuellement dans le panneau Zync Config.
+   > **URL de l'instancer et secret JWT** : avec le workflow d'installation fourni, les deux sont injectés automatiquement dans le conteneur CTFd depuis `deploy/.env` : `ZYNC_DEPLOYER_URL` (`https://instancer.<domaine>` pour l'instancer intégré) et `ZYNC_JWT_SECRET`. Le même secret est écrit dans la configuration de Galvanize. Vous n'avez donc pas besoin de saisir ces valeurs manuellement dans le panneau Zync Config.
 
 ## Options du script d'installation
 
@@ -111,7 +111,41 @@ Si vous utilisez l'option `--theme`, le script montera automatiquement le dossie
 Par défaut, `setup.sh` déploie Galvanize dans le même stack Docker Compose que CTFd. Deux alternatives sont disponibles :
 
 - **`--instancer-url URL`** — pointer CTFd vers une instance Galvanize déjà en cours d'exécution ; aucun conteneur local n'est démarré.
-- **`--no-instancer`** — ignorer Galvanize entièrement lors de l'installation. Vous pouvez le déployer indépendamment plus tard en utilisant le service instancer manuellement avec sa propre configuration (voir `config/galvanize/config.yaml` pour le modèle).
+- **`--no-instancer`** — ignorer Galvanize entièrement lors de l'installation. Vous pouvez le déployer indépendamment plus tard avec sa propre configuration (voir `config/galvanize/config.yaml` pour le modèle de configuration et `config/galvanize/playbooks/` pour les playbooks Ansible). `ZYNC_DEPLOYER_URL` vaut `https://instancer.<domaine>` par défaut ; modifiez-le dans `deploy/.env` si votre instancer est ailleurs.
+
+### Configuration de Galvanize
+
+Le modèle `config/galvanize/config.yaml` est copié vers `deploy/data/galvanize/config.yaml` à **chaque** exécution de `setup.sh` : faites donc vos modifications durables dans le modèle plutôt que dans la copie déployée. Le script renseigne ensuite :
+
+| Clé | Valeur |
+|-----|--------|
+| `auth.jwt_secret` | Secret généré (partagé avec CTFd via `ZYNC_JWT_SECRET`) |
+| `instancer.ansible.user` / `inventory` | `ansible-user` sur l'hôte `--domain` |
+| `instancer.instancer_host` | `--domain`, ou `<ip>.sslip.io` pour les déploiements sur IP (DNS wildcard) |
+| `instancer.redis.addr` / `db` | `redis:6379`, base `1` (CTFd utilise la base `0` du même Redis) |
+| `instancer.extra_deployment_parameters.traefik_network` | `<COMPOSE_PROJECT_NAME>_challenges` (voir [Isolation réseau](#isolation-réseau)) |
+
+Autres valeurs par défaut : les ports hôtes TCP sont tirés au hasard pour chaque équipe (`randomize_published_ports: true`), et chaque conteneur de challenge est limité à 1 CPU, 512 Mo de RAM et 256 PID, sauf si le challenge surcharge `resource_limits`.
+
+### Playbooks Galvanize
+
+Les playbooks Ansible (`http`, `tcp`, `custom_compose`) sont fournis dans `config/galvanize/playbooks/` et copiés vers `deploy/data/galvanize/playbooks/` à chaque exécution du setup. Ce sont des copies du dossier [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/master/data/playbooks) de Galvanize (v0.7.1) : le montage `data/` masque les playbooks intégrés à l'image Galvanize, ils doivent donc se trouver sur l'hôte. Lors d'une mise à jour de Galvanize, recopiez ces fichiers depuis le dépôt amont.
+
+### Isolation réseau
+
+Le stack utilise des réseaux Docker séparés afin que les conteneurs de challenges, contrôlés par les joueurs, ne puissent pas atteindre la plateforme :
+
+| Réseau | Membres | Rôle |
+|--------|---------|------|
+| `proxy` | Traefik, CTFd, instancer | Entrée publique (ports 80/443), SSH sortant de l'instancer vers l'hôte cible Ansible |
+| `internal` (sans accès internet) | CTFd, MariaDB, Redis, instancer | Trafic backend (base de données, Redis) |
+| `challenges` | Traefik, instances de challenges | Routage Traefik vers les challenges `http` |
+
+- L'API Galvanize doit être joignable publiquement : Zync l'appelle directement depuis le navigateur des joueurs (et depuis le tableau de bord admin), ce qui permet aussi d'héberger Galvanize sur une machine séparée (`--instancer-url`). L'instancer intégré est publié par Traefik sur son propre sous-domaine, `https://instancer.<domaine>` (`http://instancer.<ip>.sslip.io` pour les déploiements sur IP), sur le port 443. Aucun port supplémentaire (comme 8080) n'est ouvert, et son endpoint Prometheus `/metrics` n'est pas routé. Ce sous-domaine doit pointer vers le serveur ; l'enregistrement DNS wildcard utilisé pour les sous-domaines des challenges (`*.<domaine>`) le couvre déjà.
+- Les instances de challenges ne peuvent pas joindre directement CTFd, MariaDB, Redis ni l'instancer ; elles ne voient que les mêmes points d'accès publics que les joueurs. Elles peuvent toujours joindre Traefik, les autres instances du réseau `challenges` et internet. Les challenges TCP tournent sur le réseau bridge par défaut de Docker.
+- Le provider Docker de Traefik utilise le réseau `challenges` par défaut, car les conteneurs déployés par Galvanize n'ont pas de label `traefik.docker.network`. Les services de la plateforme routés par Traefik (CTFd) doivent définir explicitement `traefik.docker.network=<COMPOSE_PROJECT_NAME>_proxy`.
+
+> **Mise à jour d'un déploiement existant** : arrêtez d'abord les instances de challenges en cours (elles sont rattachées à l'ancien réseau), puis relancez `setup.sh`. Cela réécrit `docker-compose.yml`, les configs Traefik, la config et les playbooks Galvanize, et remet `ZYNC_DEPLOYER_URL` à `https://instancer.<domaine>` (sauf si `--instancer-url` est fourni). Zync met en cache l'URL de l'instancer dans le navigateur de chaque joueur (`localStorage`) : faites la mise à jour entre deux événements, car les joueurs ayant déjà ouvert un challenge avec l'ancienne URL `:8080` continueront de l'utiliser jusqu'à ce que leurs données de site soient effacées.
 
 ## Structure du répertoire de déploiement
 
@@ -130,7 +164,11 @@ deploy/
 │   ├── CTFd/
 │   ├── mysql/
 │   ├── redis/
-│   └── galvanize/              # Config Galvanize et BDD SQLite (instancer local uniquement)
+│   └── galvanize/              # Données Galvanize (instancer local uniquement)
+│       ├── config.yaml         # Config Galvanize (depuis config/galvanize/config.yaml)
+│       ├── playbooks/          # Playbooks Ansible (depuis config/galvanize/playbooks/)
+│       ├── challenges/         # Dépôts de challenges indexés par Galvanize
+│       └── deployer.sqlite     # Base de données des déploiements Galvanize
 └── cron_backup.log             # Journal du cron de sauvegarde
 ```
 
@@ -210,6 +248,7 @@ seule fois.
 | `--dry-run`           | Mode simulation (affiche les actions sans les exécuter)             |
 | `--force`             | Forcer les opérations (reconstruction, écrasement)                  |
 | `--parallel-builds N` | Nombre de constructions parallèles (défaut : 4)                     |
+| `--build-images MODE` | Construction des images : `auto` (défaut), `yes`, `no`              |
 
 ## Options de debug
 
@@ -295,6 +334,7 @@ Si le flag `--theme` est utilisé :
 - Identification des challenges Docker et statiques
 
 ### 3. Construction des images Docker
+- Uniquement lorsque l'instancer Galvanize est hébergé sur cette machine : Galvanize déploie les images depuis son propre hôte Docker, donc des images construites ailleurs ne sont jamais utilisées. La détection (`--build-images auto`) lit `INSTANCER_MODE` dans `<working-folder>/deploy/.env` (écrit par `setup.sh` : `local`, `external` ou `none`), se rabat sur un `GALVANIZE_CONFIG_PATH` local pour les anciens déploiements, puis sur un conteneur `galvanize-instancer` en cours d'exécution. Sans instancer local, `all` passe directement à l'ingestion et `build` ne fait rien. Forcer avec `--build-images yes` ou `--build-images no`.
 - Construction séquentielle ou parallèle des images
 - Support du mode `--force` pour une reconstruction complète
 - Gestion des erreurs avec rapports détaillés
@@ -393,21 +433,15 @@ hints:
 value: 5
 type: zync                            # ou type: dynamic / static
 
-# Les options suivantes sont réservées au type: zync. Voir https://github.com/28Pollux28/galvanize/blob/master/data/challenges/exemple/challenge.yml pour la configuration à jour
+# Les options suivantes sont réservées au type: zync. Voir https://github.com/28Pollux28/galvanize/tree/master/data/challenges/example pour des exemples à jour (http, tcp, custom_compose)
 
-playbook_name: http                   # Utiliser 'http' pour les challenges web, 'tcp' pour les challenges TCP, ou 'custom_compose' pour les configurations Docker Compose personnalisées
+playbook_name: http                   # 'http' (conteneur unique derrière Traefik, sous-domaine HTTPS), 'tcp' (ports publiés) ou 'custom_compose' (voir ci-dessous)
 deploy_parameters:
-  image: nginx:alpine                 # Image Docker à déployer
+  image: nginx:alpine                 # Image Docker à déployer (playbooks 'http' et 'tcp')
   unique: false                       # Mettre à true si une instance unique est nécessaire pour tous les joueurs
+  http_port: 80                       # Port du conteneur vers lequel Traefik redirige (Uniquement pour 'http', défaut : 80)
   published_ports:                    # Ports à exposer depuis le conteneur (Uniquement pour les playbooks 'tcp')
-    - 80                              # Port à exposer
-  compose_definition: |-              # Définition Docker Compose (Uniquement pour les playbooks 'custom_compose')
-    version: '3'
-    services:
-      web:
-        image: nginx:alpine
-        ports:
-          - "80:80"
+    - 1337                            # Port hôte aléatoire par équipe ; "22/ssh" ajoute un indice de schéma d'URL, "8080:80/http" est un mapping fixe
   env:                                # Variables d'environnement transmises au conteneur
     FLAG: "flag{flag_to_find_in_env}"
     TZ: Europe/Zurich
@@ -416,6 +450,30 @@ deploy_parameters:
     memory: "512M"
     pids_limit: 256
 ```
+
+### Challenges multi-services (Docker Compose)
+
+Pour les challenges nécessitant plusieurs conteneurs, placez un fichier Compose standard (`compose.yaml`, `compose.yml`, `docker-compose.yaml` ou `docker-compose.yml`) à côté de `challenge.yml`. Galvanize le détecte et utilise `custom_compose` comme `playbook_name` par défaut. Déclarez les services accessibles aux joueurs avec un bloc `expose` au lieu d'écrire à la main les labels Traefik, les réseaux ou les ports hôtes :
+
+```yaml
+type: zync
+deploy_parameters:
+  unique: false
+  expose:
+    - service: web      # routé par Traefik -> https://<instance>.<domaine>/
+      port: 80
+      type: http
+    - service: ssh      # publié sur un port hôte aléatoire par équipe
+      port: 22
+      type: tcp
+      scheme: ssh       # optionnel, change uniquement l'URL de connexion affichée
+```
+
+Notes :
+
+- `challenges.sh` construit chaque service ayant une clé `build:` et, s'il n'a pas d'`image:`, l'étiquette `<challenge>_<service>:latest` dans le fichier compose pour que Galvanize puisse déployer l'image construite localement. Avec un instancer distant, rien n'est construit : donnez à chaque service `build:` une `image:` étiquetée que l'hôte Docker de l'instancer peut récupérer (l'ingestion rejette les services construits sans image).
+- Ne définissez ni `container_name` ni `ports:` vous-même : Galvanize nomme chaque projet par équipe et câble le réseau à partir de `expose`.
+- Les contextes `build:` et les montages sont résolus sur l'hôte de déploiement : privilégiez des images pré-construites.
 
 ## Configuration générée
 

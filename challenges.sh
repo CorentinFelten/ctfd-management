@@ -46,6 +46,7 @@ declare -A CONFIG=(
     [CHALLENGES]=""
     [FORCE]="false"
     [PARALLEL_BUILDS]="4"
+    [BUILD_IMAGES]="auto"
     [DEBUG]="false"
     [SKIP_DOCKER_CHECK]="false"
     [CONFIG_FILE]=""
@@ -83,6 +84,9 @@ BEHAVIOR OPTIONS:
     -n, --dry-run               Show what would be done without executing
     -F, --force                 Force operations (rebuild images, overwrite challenges)
     -P, --parallel-builds N     Number of parallel Docker builds (default: 4)
+        --build-images MODE     Build challenge images: auto, yes, no (default: auto)
+                                  auto builds only when the Galvanize instancer runs on
+                                  this host; a remote instancer cannot use local images
 
 DEBUGGING:
     -D, --debug                 Enable debug output
@@ -156,6 +160,13 @@ parse_arguments() {
                 [[ -n ${2:-} ]] || error_exit "Missing value for --parallel-builds"
                 [[ "$2" =~ ^[0-9]+$ ]] || error_exit "Invalid number for --parallel-builds: $2"
                 CONFIG[PARALLEL_BUILDS]="$2"; shift 2 ;;
+            --build-images)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --build-images"
+                case "${2,,}" in
+                    auto|yes|no) CONFIG[BUILD_IMAGES]="${2,,}" ;;
+                    *) error_exit "Invalid value for --build-images: $2. Valid: auto, yes, no" ;;
+                esac
+                shift 2 ;;
             -f|--config)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --config"
                 CONFIG[CONFIG_FILE]="$2"; shift 2 ;;
@@ -175,11 +186,36 @@ parse_arguments() {
     resolve_ctf_repo_path
 }
 
+# ── Decide whether challenge images need building on this host ──────────────
+#
+# Galvanize deploys images from the Docker host it targets, so building here
+# only helps when that is this machine. Sets CONFIG[DO_BUILD] to true/false.
+
+resolve_build_images() {
+    case "${CONFIG[BUILD_IMAGES]}" in
+        yes) CONFIG[DO_BUILD]="true";  log_info "Image build forced (--build-images yes)" ;;
+        no)  CONFIG[DO_BUILD]="false"; log_info "Image build disabled (--build-images no)" ;;
+        auto)
+            if is_local_instancer; then
+                CONFIG[DO_BUILD]="true"
+                log_debug "Galvanize instancer is local ($_INSTANCER_DETECTION) — images will be built"
+            else
+                CONFIG[DO_BUILD]="false"
+                log_info "Galvanize instancer is not hosted locally ($_INSTANCER_DETECTION) — skipping image build"
+                log_info "Use --build-images yes to build anyway"
+            fi
+            ;;
+        *) error_exit "Invalid BUILD_IMAGES value: ${CONFIG[BUILD_IMAGES]}. Valid: auto, yes, no" ;;
+    esac
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
     log_info "Enhanced CTF Challenge Management Tool v${VERSION}"
     log_info "Action: ${CONFIG[ACTION]}"
+
+    [[ "${CONFIG[ACTION]}" == "all" || "${CONFIG[ACTION]}" == "build" ]] && resolve_build_images
 
     check_dependencies
     check_ctfd_api_deps
@@ -189,13 +225,21 @@ main() {
 
     case "${CONFIG[ACTION]}" in
         all)
-            build_challenges   || has_failures=true
-            [[ "$has_failures" == "true" ]] \
-                && log_warning "Some builds failed — continuing with ingestion for successfully built challenges"
+            if [[ "${CONFIG[DO_BUILD]}" == "true" ]]; then
+                build_challenges   || has_failures=true
+                [[ "$has_failures" == "true" ]] \
+                    && log_warning "Some builds failed — continuing with ingestion for successfully built challenges"
+            fi
             initialize_ctfd_config
             ingest_challenges  || has_failures=true
             ;;
-        build)   build_challenges   || has_failures=true ;;
+        build)
+            if [[ "${CONFIG[DO_BUILD]}" == "true" ]]; then
+                build_challenges || has_failures=true
+            else
+                log_warning "Build action skipped: images are not built on this host (--build-images ${CONFIG[BUILD_IMAGES]})"
+            fi
+            ;;
         ingest)  initialize_ctfd_config; ingest_challenges || has_failures=true ;;
         sync)    initialize_ctfd_config; sync_challenges   || has_failures=true ;;
         status)  show_status        ;;

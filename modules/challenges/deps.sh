@@ -11,6 +11,8 @@ check_dependencies() {
 
     if [[ "$action" == "ingest" || "$action" == "sync" ]]; then
         log_debug "Skipping Docker check (not needed for $action)"
+    elif [[ ( "$action" == "all" || "$action" == "build" ) && "${CONFIG[DO_BUILD]:-true}" == "false" ]]; then
+        log_debug "Skipping Docker check (no images to build for $action)"
     elif [[ "${CONFIG[SKIP_DOCKER_CHECK]}" == "false" ]]; then
         log_debug "Checking Docker installation..."
         command -v docker &>/dev/null \

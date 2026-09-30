@@ -5,3 +5,4 @@ data/*
 /.idea/
 *.log
 .claude
+.DS_Store
