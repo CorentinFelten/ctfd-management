@@ -186,7 +186,7 @@ install_ctfd() {
     # ── Local instancer setup ──
     # Skipped when --instancer-url (external) or --no-instancer is given.
     local use_local_instancer="false"
-    if [[ -z "${CONFIG[INSTANCER_URL]:-}" && -z "${CONFIG[NO_INSTANCER]:-}" ]]; then
+    if instancer_deployed_locally; then
         use_local_instancer="true"
         local instancer_config_path="$deploy_dir/data/galvanize/config.yaml"
         log_info "Setting up local instancer..."
