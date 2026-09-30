@@ -26,7 +26,7 @@ jobs:
     env:
       E2E: .github/scripts/setup-e2e
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # setup.sh expects a server that already runs sshd: Galvanize deploys
       # challenges with Ansible over SSH to the --domain address.
@@ -106,7 +106,7 @@ jobs:
 
       - name: Upload diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: setup-e2e-diagnostics
           path: ${{ runner.temp }}/diagnostics
