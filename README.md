@@ -53,7 +53,7 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 | Option                   | Description                                                                      | Required |
 |--------------------------|----------------------------------------------------------------------------------|----------|
 | `--domain domain/IP`     | URL/domain of your CTFd server                                                   | ✅ Yes   |
-| `--working-folder DIR`   | Working directory (default: `/home/$USER`)                                       | ❌ No    |
+| `--working-folder DIR`   | Working directory (default: your home directory, `/root` when run as root)     | ❌ No    |
 | `--theme DIR/URL`        | Enables the use of a personalised theme                                          | ❌ No    |
 | `--backup-schedule TYPE` | Database backup frequency (`daily` (default), `hourly`, `10min`)                 | ❌ No    |
 | `--instancer-url URL`    | Use an external Galvanize instancer instead of deploying one locally             | ❌ No    |
@@ -229,7 +229,7 @@ subsequent runs, so you are only prompted once.
 |------------------------|-------------------------------------------------------------------------|----------|
 | `--repo REPO`          | Name of the challenge repository present in the working directory       | ✅ Yes   |
 | `--action ACTION`      | Action to perform (all (default), build, ingest, sync, status, cleanup) | ❌ No    |
-| `--working-folder DIR` | Working directory (default: `/home/$USER`)                              | ❌ No    |
+| `--working-folder DIR` | Working directory (default: your home directory)                        | ❌ No    |
 | `--config FILE`        | Load configuration from a file                                          | ❌ No    |
 
 ## Filtering Options

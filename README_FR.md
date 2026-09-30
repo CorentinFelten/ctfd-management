@@ -53,7 +53,7 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 | Option                   | Description                                                                               | Requis   |
 |--------------------------|-------------------------------------------------------------------------------------------|----------|
 | `--domain URL/IP`        | URL/domaine de votre serveur CTFd                                                         | ✅ Oui   |
-| `--working-folder DIR`   | Répertoire de travail (défaut : `/home/$USER`)                                            | ❌ Non   |
+| `--working-folder DIR`   | Répertoire de travail (défaut : votre répertoire personnel, `/root` en root)             | ❌ Non   |
 | `--theme DIR/URL`        | Permet l'utilisation d'un thème personnalisé                                              | ❌ Non   |
 | `--backup-schedule TYPE` | Fréquence des sauvegardes (`daily` (défaut), `hourly`, `10min`)                           | ❌ Non   |
 | `--instancer-url URL`    | Utiliser un instancer Galvanize externe plutôt que d'en déployer un localement            | ❌ Non   |
@@ -234,7 +234,7 @@ seule fois.
 |------------------------|--------------------------------------------------------------------------------------|---------|
 | `--repo REPO`          | Nom du dépôt de challenges présent dans le répertoire de travail                     | ✅ Oui  |
 | `--action ACTION`      | Action à effectuer (all (défaut), build, ingest, sync, status, cleanup)              | ❌ Non  |
-| `--working-folder DIR` | Répertoire de travail (défaut : `/home/$USER`)                                       | ❌ Non  |
+| `--working-folder DIR` | Répertoire de travail (défaut : votre répertoire personnel)                          | ❌ Non  |
 | `--config FILE`        | Charger une configuration depuis un fichier                                          | ❌ Non  |
 
 ## Options de filtrage

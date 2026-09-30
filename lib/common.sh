@@ -81,6 +81,19 @@ generate_password() {
     printf '%s' "${raw:0:length}"
 }
 
+# invoking_user_home — home directory of the user who ran the script (the sudo
+# caller when escalated), read from the passwd database. Running directly as
+# root therefore gives /root rather than a made-up /home/root.
+invoking_user_home() {
+    local user="${SUDO_USER:-${USER:-$(id -un)}}" home=""
+    if command -v getent &>/dev/null; then
+        home="$(getent passwd "$user" | cut -d: -f6)"
+    fi
+    # No passwd entry (or no getent, e.g. macOS): $HOME is right unless sudo changed it
+    [[ -z "$home" && -z "${SUDO_USER:-}" ]] && home="${HOME:-}"
+    printf '%s' "${home:-/home/$user}"
+}
+
 is_ip_address() {
     local input="$1"
 

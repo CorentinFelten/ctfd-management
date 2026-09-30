@@ -38,7 +38,7 @@ source "$SCRIPT_DIR/modules/challenges/cleanup.sh"
 
 declare -A CONFIG=(
     [DRY_RUN]="false"
-    [WORKING_DIR]="/home/${SUDO_USER:-$USER}"
+    [WORKING_DIR]="$(invoking_user_home)"
     [REPO]=""
     [REPO_PATH]=""
     [ACTION]="all"
@@ -65,7 +65,7 @@ ACTIONS:
     -a, --action ACTION         Action to perform: all, build, ingest, sync, status, cleanup (default: all)
 
 MAIN OPTIONS:
-    -w, --working-folder DIR    Set working directory (default: /home/\$USER)
+    -w, --working-folder DIR    Set working directory (default: your home directory)
     -r, --repo REPO         Challenge repository — resolved in this priority order:
                                   1. Folder name inside --working-folder (e.g. "MyCTF-Challenges")
                                   2. Folder name inside <working-folder>/deploy/data/galvanize/challenges/
