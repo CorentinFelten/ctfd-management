@@ -29,6 +29,13 @@ should_process_challenge() {
     category_name="$(basename "$category")"
     challenge_name="$(basename "$challenge")"
 
+    # Galvanize never indexes directories named "example", so a challenge
+    # ingested from one would show up in CTFd but could never be deployed
+    if [[ "$category_name" == "example" || "$challenge_name" == "example" ]]; then
+        log_debug "Skipping example directory: $category_name/$challenge_name"
+        return 1
+    fi
+
     # Category filter
     if [[ -n "${CONFIG[CATEGORIES]}" ]]; then
         local -a arr; IFS=',' read -ra arr <<< "${CONFIG[CATEGORIES]}"

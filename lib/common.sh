@@ -57,7 +57,9 @@ _run_cleanup() {
     for f in "${_cleanup_files[@]}"; do
         rm -rf "$f" 2>/dev/null || true
     done
-    rm -f /tmp/ctf_build_*.log /tmp/ctf_status_*.txt 2>/dev/null || true
+    # Build logs are not removed here: successful builds delete their own, and
+    # a failed build's log is what the error message points the user to.
+    rm -f /tmp/ctf_status_*.txt 2>/dev/null || true
     [[ -n "${_CHALL_YAML_CACHE_DIR:-}" ]] && rm -rf "$_CHALL_YAML_CACHE_DIR" 2>/dev/null || true
 
     if [[ "$_SCRIPT_COMPLETED" != "true" && $exit_code -ne 0 ]]; then
