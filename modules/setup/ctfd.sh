@@ -281,6 +281,12 @@ install_ctfd() {
     "${compose_cmd[@]}" up -d
     log_success "CTFd containers started successfully"
 
+    if [[ "${CONFIG[ANSIBLE_KEY_REGENERATED]:-}" == "true" ]]; then
+        log_info "Recreating the instancer so it picks up the new Ansible SSH key..."
+        "${compose_cmd[@]}" up -d --force-recreate --no-deps instancer
+        log_success "Instancer recreated"
+    fi
+
     if [[ "$plugin_updated" == "true" ]]; then
         log_info "Restarting CTFd to load the updated zync plugin..."
         "${compose_cmd[@]}" restart ctfd

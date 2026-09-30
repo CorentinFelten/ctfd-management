@@ -14,13 +14,20 @@ setup_ansible_user() {
 
     log_info "Setting up Ansible user: $ANSIBLE_USER"
 
+    # Recreating the key pair is the default so a re-run can start from
+    # scratch; a missing pair is always generated.
+    local regenerate="true"
     if id "$ANSIBLE_USER" &>/dev/null; then
-        log_warning "User $ANSIBLE_USER already exists"
-        read -rp "Do you want to recreate the SSH keys? [Y/n] " -n 1 REPLY
-        echo >&2
-        if [[ -n "$REPLY" && ! $REPLY =~ ^[Yy]$ ]]; then
-            log_info "Skipping Ansible user setup"
-            return 0
+        log_info "User $ANSIBLE_USER already exists"
+        if [[ -f "$private_key_path" && -f "$public_key_path" ]]; then
+            read -rp "Do you want to recreate the Ansible SSH key pair? [Y/n] " -n 1 REPLY
+            echo >&2
+            if [[ -n "$REPLY" && ! $REPLY =~ ^[Yy]$ ]]; then
+                regenerate="false"
+                log_info "Keeping the existing SSH key pair"
+            fi
+        else
+            log_info "No SSH key pair found in $ssh_key_dir — generating one"
         fi
     else
         log_info "Creating user: $ANSIBLE_USER"
@@ -35,19 +42,30 @@ setup_ansible_user() {
     chmod 700 "$ansible_ssh_dir"
     mkdir -p "$ssh_key_dir"
 
-    log_info "Generating SSH key pair for Ansible..."
-    (
-        umask 077
-        ssh-keygen -t rsa -b 4096 -f "$private_key_path" -N "" \
-            -C "ansible@galvanize-instancer" -q
-    )
-    setup_env_key SSH_KEY_PATH "$private_key_path"
-
-    if [[ ! -f "$private_key_path" || ! -f "$public_key_path" ]]; then
-        error_exit "Failed to generate SSH keys"
+    if [[ "$regenerate" == "true" ]]; then
+        log_info "Generating SSH key pair for Ansible..."
+        # Remove the old pair first: ssh-keygen would otherwise stop to ask
+        # whether to overwrite it, and answering "n" aborted the setup.
+        rm -f "$private_key_path" "$public_key_path"
+        (
+            umask 077
+            ssh-keygen -t rsa -b 4096 -f "$private_key_path" -N "" \
+                -C "ansible@galvanize-instancer" -q
+        )
+        [[ -f "$private_key_path" && -f "$public_key_path" ]] \
+            || error_exit "Failed to generate SSH keys"
+        # The instancer container bind-mounts the key file, so it must be
+        # recreated to see the new one (see install_ctfd)
+        CONFIG[ANSIBLE_KEY_REGENERATED]="true"
+        log_success "SSH key pair generated"
     fi
+
+    # Applied on every run, including when the key is kept: re-runs chown the
+    # whole deploy dir to the invoking user, while the instancer container
+    # reads the key as UID 1000.
+    setup_env_key SSH_KEY_PATH "$private_key_path"
     chown 1000:1000 "$private_key_path"
-    log_success "SSH key pair generated"
+    chmod 600 "$private_key_path"
 
     local authorized_keys="$ansible_ssh_dir/authorized_keys"
     cat "$public_key_path" > "$authorized_keys"
@@ -70,10 +88,6 @@ setup_ansible_user() {
     log_success "Ansible user setup complete!"
     log_info "SSH private key: $private_key_path"
     log_info "SSH public key:  $public_key_path"
-    log_info ""
-    log_info "To use this user with Ansible, configure your inventory with:"
-    log_info "  ansible_user: $ANSIBLE_USER"
-    log_info "  ansible_ssh_private_key_file: $private_key_path"
 }
 
 configure_instancer() {
