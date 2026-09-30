@@ -125,6 +125,18 @@ is_ip_address() {
     return 1
 }
 
+# is_loopback_or_unspecified HOST — true for localhost names, 127.0.0.0/8,
+# ::1 and the unspecified addresses 0.0.0.0 / ::, none of which name this
+# server from anywhere else (players, or containers on this host).
+is_loopback_or_unspecified() {
+    local host="${1,,}"
+    host="${host#[}"; host="${host%]}"
+
+    [[ "$host" == "localhost" || "$host" == *.localhost ]] && return 0
+    [[ "$host" == "0.0.0.0" || "$host" == "::" || "$host" == "::1" ]] && return 0
+    is_ip_address "$host" && [[ "$host" == 127.* ]]
+}
+
 is_git_url() {
     local input="$1"
     [[ $input =~ ^(https?|git|ssh):// || $input =~ \.git$ || $input =~ ^git@ ]]

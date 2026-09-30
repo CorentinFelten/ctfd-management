@@ -135,6 +135,13 @@ parse_arguments() {
     CONFIG[DOMAIN]="${CONFIG[DOMAIN]#http://}"
     CONFIG[DOMAIN]="${CONFIG[DOMAIN]%%/*}"
 
+    if is_loopback_or_unspecified "${CONFIG[DOMAIN]}"; then
+        error_exit "--domain ${CONFIG[DOMAIN]} is a loopback address. Use this server's real IP address or domain name instead.
+  Players must reach CTFd at this address, and the Galvanize instancer connects
+  to it over SSH from inside its container, where ${CONFIG[DOMAIN]} is the container itself.
+  This server's primary IP address is usually given by: ip -4 route get 1.1.1.1"
+    fi
+
     CONFIG[DEPLOY_DIR]="${CONFIG[WORKING_DIR]}/deploy"
 
     if [[ -z ${CONFIG[NO_HTTPS]:-} ]] && is_ip_address "${CONFIG[DOMAIN]}"; then

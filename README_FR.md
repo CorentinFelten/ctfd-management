@@ -64,6 +64,8 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 | `--help`                 | Afficher l'aide                                                                           | ❌ Non   |
 
 > `--instancer-url` et `--no-instancer` sont mutuellement exclusifs.
+>
+> `--domain` doit être une adresse joignable par les joueurs : les adresses de loopback (`127.0.0.1`, `localhost`, `::1`) et `0.0.0.0` sont refusées. L'instancer Galvanize se connecte aussi à cette adresse en SSH depuis son conteneur, où une adresse de loopback désigne le conteneur lui-même. Pour un déploiement par IP, utilisez l'IP réelle du serveur (`ip -4 route get 1.1.1.1` l'affiche).
 
 ## Exemples d'installation
 

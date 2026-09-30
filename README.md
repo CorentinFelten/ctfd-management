@@ -64,6 +64,8 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 | `--help`                 | Display help                                                                     | ❌ No    |
 
 > `--instancer-url` and `--no-instancer` are mutually exclusive.
+>
+> `--domain` must be an address players can reach: loopback addresses (`127.0.0.1`, `localhost`, `::1`) and `0.0.0.0` are rejected. The Galvanize instancer also connects to this address over SSH from inside its container, where a loopback address is the container itself. For an IP deployment, use the server's real IP (`ip -4 route get 1.1.1.1` shows it).
 
 ## Installation Examples
 
