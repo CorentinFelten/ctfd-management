@@ -501,6 +501,18 @@ Les identifiants du fournisseur DNS (pour les certificats TLS wildcard) sont éc
 
 > **Relancer le setup est sans risque** : si des secrets existent déjà dans `.env`, ils sont préservés. Seuls les secrets manquants sont générés, donc relancer `setup.sh` ne cassera pas les conteneurs existants.
 
+## Intégration continue
+
+`.github/workflows/setup-e2e.yml` s'exécute à chaque push (sauf changements de documentation uniquement) et peut être lancé manuellement depuis l'onglet Actions. Sur un runner Ubuntu 24.04 neuf, il :
+
+1. vérifie que `setup.sh` refuse un `--domain` de loopback ;
+2. exécute `./setup.sh --domain <IP du runner> --yes`, soit un déploiement sans HTTPS avec l'instancer Galvanize intégré ;
+3. vérifie la stack (`.github/scripts/setup-e2e/check-stack.sh`) : santé des conteneurs, routage Traefik vers CTFd et l'instancer, `.env` et configuration Galvanize générés, accès SSH d'Ansible, tâche cron et exécution d'une sauvegarde ;
+4. déploie puis arrête une instance de challenge via l'API Galvanize avec un JWT comme celui de Zync (`deploy-challenge.sh`), en y accédant en HTTPS via Traefik ;
+5. réexécute `setup.sh --yes`, vérifie que les secrets n'ont pas changé, puis refait les vérifications et le déploiement avec la clé SSH recréée.
+
+En cas d'échec, les logs des conteneurs et les configurations expurgées sont publiés dans l'artefact `setup-e2e-diagnostics`. Le mode HTTPS (certificats DNS-01) et Debian ne sont pas couverts.
+
 ---
 
 Ces scripts ont initialement été développés pour l'équipe PolyCyber afin d'automatiser l'installation et la gestion des serveurs CTFd. Ils ont été conçus pour fonctionner spécifiquement avec l'instancer [Galvanize](https://github.com/28Pollux28/galvanize) et le plugin [Zync](https://github.com/28Pollux28/zync).

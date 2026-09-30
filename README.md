@@ -496,6 +496,18 @@ DNS provider credentials (for wildcard TLS certificates) are written to `<deploy
 
 > **Re-running setup is safe**: if secrets already exist in `.env`, they are preserved. Only missing secrets are generated, so running `setup.sh` again will not break existing containers.
 
+## Continuous Integration
+
+`.github/workflows/setup-e2e.yml` runs on every push (documentation-only changes excepted) and can be started manually from the Actions tab. On a fresh Ubuntu 24.04 runner it:
+
+1. checks that `setup.sh` rejects a loopback `--domain`;
+2. runs `./setup.sh --domain <runner IP> --yes`, which is a no-HTTPS deployment with the bundled Galvanize instancer;
+3. checks the stack (`.github/scripts/setup-e2e/check-stack.sh`): container health, Traefik routing to CTFd and the instancer, the generated `.env`/Galvanize config, Ansible SSH access, the backup cron job and a backup run;
+4. deploys and terminates a challenge instance through the Galvanize API with a Zync-style JWT (`deploy-challenge.sh`), reaching it over HTTPS through Traefik;
+5. re-runs `setup.sh --yes`, checks that the secrets are unchanged, then repeats the checks and the deployment with the recreated SSH key.
+
+On failure, container logs and redacted configs are uploaded as the `setup-e2e-diagnostics` artifact. HTTPS mode (DNS-01 certificates) and Debian are not covered.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
