@@ -5,7 +5,30 @@
 [[ -n "${_LIB_ENV_LOADED:-}" ]] && return 0
 readonly _LIB_ENV_LOADED=1
 
-# ── Write or update a key in the .env file ──────────────────────────────────
+# ── Write or update a key in a KEY=VALUE env file ───────────────────────────
+
+_write_env_key() {
+    local env_file="$1" key="$2" value="$3"
+
+    if grep -q "^${key}=" "$env_file"; then
+        # Pass the value via the environment (ENVIRON), not `-v v=`, so awk does
+        # not interpret backslash escapes inside the value (e.g. a credential
+        # containing a literal backslash would otherwise be mangled).
+        # umask 077: the temp copy holds secrets too
+        ( umask 077
+          _ENV_VALUE="$value" awk -v k="$key" '{
+              if (index($0, k "=") == 1) print k "=" ENVIRON["_ENV_VALUE"]
+              else print
+          }' "$env_file" > "${env_file}.tmp" )
+        # cat (not mv) keeps the target's inode, owner and permissions
+        cat "${env_file}.tmp" > "$env_file"
+        rm -f "${env_file}.tmp"
+    else
+        printf '%s=%s\n' "$key" "$value" >> "$env_file"
+    fi
+}
+
+# ── Write or update a key in the deployment .env file ───────────────────────
 
 setup_env_key() {
     local key="$1" value="$2"
@@ -16,18 +39,34 @@ setup_env_key() {
         cp "${SCRIPT_DIR}/config/${CONFIG[DOCKER_ENV_FILE]}" "$env_file"
     fi
 
-    if grep -q "^${key}=" "$env_file"; then
-        # Pass the value via the environment (ENVIRON), not `-v v=`, so awk does
-        # not interpret backslash escapes inside the value (e.g. a credential
-        # containing a literal backslash would otherwise be mangled).
-        _ENV_VALUE="$value" awk -v k="$key" '{
-            if (index($0, k "=") == 1) print k "=" ENVIRON["_ENV_VALUE"]
-            else print
-        }' "$env_file" > "${env_file}.tmp"
-        mv "${env_file}.tmp" "$env_file"
-    else
-        printf '%s=%s\n' "$key" "$value" >> "$env_file"
+    _write_env_key "$env_file" "$key" "$value"
+}
+
+# ── Traefik's private env file ──────────────────────────────────────────────
+#
+# Traefik only needs the DNS-01 provider credentials, so it gets its own
+# env file (chmod 600) instead of the whole .env, which also holds the
+# database passwords, CTFd's SECRET_KEY and the Zync JWT secret.
+
+traefik_env_file() {
+    printf '%s' "${CONFIG[DEPLOY_DIR]}/traefik.env"
+}
+
+# Create the file if missing. Docker Compose refuses to start when an env_file
+# is absent, so this also runs for HTTP-only deployments (empty file).
+ensure_traefik_env_file() {
+    local env_file
+    env_file="$(traefik_env_file)"
+    if [[ ! -f "$env_file" ]]; then
+        mkdir -p "${CONFIG[DEPLOY_DIR]}"
+        ( umask 077; printf '# DNS-01 provider credentials for Traefik (written by setup.sh)\n' > "$env_file" )
     fi
+    chmod 600 "$env_file"
+}
+
+setup_traefik_env_key() {
+    ensure_traefik_env_file
+    _write_env_key "$(traefik_env_file)" "$1" "$2"
 }
 
 # ── Read a value from the .env file (used by backup/restore) ────────────────

@@ -156,6 +156,7 @@ deploy/
 ├── docker-compose.yml          # Fichier compose actif (copié depuis le dépôt)
 ├── .env                        # Variables d'environnement et secrets générés
 ├── .secrets                    # Copie en clair des secrets générés (chmod 600)
+├── traefik.env                 # Identifiants du fournisseur DNS, seul env reçu par Traefik (chmod 600)
 ├── traefik-config/             # Configs statiques et dynamiques Traefik, stockage letsencrypt
 ├── ctfd/                       # Dockerfile CTFd et entrypoint personnalisé
 │   └── plugins/zync/           # Clone du plugin instancer CTFd
@@ -347,7 +348,11 @@ Si le flag `--theme` est utilisé :
 
 ### 5. Synchronisation
 - Met à jour les challenges existants **sur place** : le challenge est mis à jour via PATCH, son ID CTFd ne change donc jamais.
-- **Repousse les sous-ressources possédées** — flags, indices, tags, topics et fichiers — en les supprimant puis en les recréant depuis `challenge.yml`, afin que toute modification soit réellement propagée.
+- **Propage les modifications des sous-ressources possédées** sans perdre l'état des joueurs :
+  - **Les indices sont mis à jour sur place**, afin que les joueurs conservent les indices déjà débloqués (CTFd suit les déblocages par ID d'indice). Le Nᵉ indice de `challenge.yml` met à jour le Nᵉ indice existant : gardez l'ordre des indices stable et ajoutez les nouveaux à la fin. Les indices retirés de `challenge.yml` sont supprimés, et les joueurs y perdent l'accès.
+  - **Les flags sont comparés** : les nouveaux flags sont ajoutés avant la suppression des anciens, le challenge n'est donc jamais sans flag valide.
+  - **Les fichiers sont comparés** par contenu (SHA-1) et par nom : les fichiers inchangés sont conservés et gardent leur URL de téléchargement ; les fichiers nouveaux ou modifiés sont envoyés, les obsolètes supprimés.
+  - Les tags et topics, qui ne portent aucun état joueur, sont supprimés puis recréés.
 - **Les requirements sont résolus en une seconde passe**, une fois que tous les challenges ont été synchronisés, afin qu'un prérequis référencé par son nom soit résolu correctement quel que soit l'ordre de traitement.
 - Option de sauvegarde avant la synchronisation, et mode `--force` pour l'écrasement.
 
@@ -484,6 +489,8 @@ Le script d'installation génère automatiquement :
 - **Secret JWT Galvanize** (48 caractères)
 
 Tous les secrets sont écrits dans `<deploy-dir>/.secrets` (chmod 600) et dans `.env`.
+
+Les identifiants du fournisseur DNS (pour les certificats TLS wildcard) sont écrits dans `<deploy-dir>/traefik.env` (chmod 600). C'est le seul fichier d'environnement transmis au conteneur Traefik : Traefik ne voit donc jamais les mots de passe de la base de données, la `SECRET_KEY` de CTFd ni le secret JWT de Zync. Les déploiements antérieurs à ce changement conservaient leurs identifiants DNS dans `.env` : relancer `setup.sh` les copie dans `traefik.env`, après quoi ils peuvent être retirés de `.env`.
 
 > **Relancer le setup est sans risque** : si des secrets existent déjà dans `.env`, ils sont préservés. Seuls les secrets manquants sont générés, donc relancer `setup.sh` ne cassera pas les conteneurs existants.
 

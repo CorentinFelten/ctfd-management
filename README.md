@@ -156,6 +156,7 @@ deploy/
 ├── docker-compose.yml          # Active compose file (copied from repo)
 ├── .env                        # Environment variables and generated secrets
 ├── .secrets                    # Plaintext copy of generated secrets (chmod 600)
+├── traefik.env                 # DNS provider credentials, the only env Traefik gets (chmod 600)
 ├── traefik-config/             # Traefik static & dynamic configs, letsencrypt storage
 ├── ctfd/                       # CTFd Dockerfile and custom entrypoint
 │   └── plugins/zync/           # CTFd instancer plugin clone
@@ -342,7 +343,11 @@ If the `--theme` flag is used:
 
 ### 5. Synchronization
 - Updates existing challenges **in place**: the challenge is PATCHed, so its CTFd ID never changes.
-- **Re-pushes owned sub-resources** — flags, hints, tags, topics, and files — by clearing and recreating them from `challenge.yml`, so edits to any of them actually propagate.
+- **Propagates edits to owned sub-resources** without losing player state:
+  - **Hints are updated in place**, so players keep the hints they already unlocked (CTFd tracks unlocks by hint ID). The Nth hint in `challenge.yml` updates the Nth existing hint: keep hint order stable and append new hints at the end. Hints removed from `challenge.yml` are deleted, and players lose access to them.
+  - **Flags are diffed**: new flags are added before removed ones are deleted, so the challenge is never left without a valid flag.
+  - **Files are diffed** by content (SHA-1) and name: unchanged files are left alone and keep their download URL; new or changed files are uploaded, stale ones deleted.
+  - Tags and topics, which carry no player state, are cleared and recreated.
 - **Requirements are resolved in a second pass**, after every challenge has been synced, so a prerequisite referenced by name resolves correctly regardless of processing order.
 - Option to backup before synchronization, and `--force` mode for overwriting.
 
@@ -479,6 +484,8 @@ The setup script automatically generates:
 - **Galvanize JWT secret** (48 characters)
 
 All secrets are written to `<deploy-dir>/.secrets` (chmod 600) and to `.env`.
+
+DNS provider credentials (for wildcard TLS certificates) are written to `<deploy-dir>/traefik.env` (chmod 600) instead. It is the only env file passed to the Traefik container, so Traefik never sees the database passwords, CTFd's `SECRET_KEY` or the Zync JWT secret. Deployments made before this change kept their DNS credentials in `.env`: re-running `setup.sh` copies them to `traefik.env`, after which they can be removed from `.env`.
 
 > **Re-running setup is safe**: if secrets already exist in `.env`, they are preserved. Only missing secrets are generated, so running `setup.sh` again will not break existing containers.
 

@@ -200,6 +200,9 @@ install_ctfd() {
 
     mkdir -p "$deploy_dir/traefik-config/letsencrypt"
 
+    # Traefik's env_file must exist even when no DNS credentials were set
+    ensure_traefik_env_file
+
     # ── Patch Traefik static configs with runtime values ──
     log_info "Setting Traefik Docker provider network to: $challenge_network"
     local traefik_file
