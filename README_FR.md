@@ -136,7 +136,7 @@ Autres valeurs par défaut : les ports hôtes TCP sont tirés au hasard pour cha
 
 ### Playbooks Galvanize
 
-Les playbooks Ansible (`http`, `tcp`, `custom_compose`) sont fournis dans `config/galvanize/playbooks/` et copiés vers `deploy/data/galvanize/playbooks/` à chaque exécution du setup. Ce sont des copies du dossier [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/master/data/playbooks) de Galvanize (v0.7.1) : le montage `data/` masque les playbooks intégrés à l'image Galvanize, ils doivent donc se trouver sur l'hôte. Lors d'une mise à jour de Galvanize, recopiez ces fichiers depuis le dépôt amont.
+Les playbooks Ansible (`http`, `tcp`, `custom_compose`) sont fournis dans `config/galvanize/playbooks/` et copiés vers `deploy/data/galvanize/playbooks/` à chaque exécution du setup. Ce sont des copies du dossier [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/master/data/playbooks) de Galvanize (v0.7.1) : le montage `data/` masque les playbooks intégrés à l'image Galvanize, ils doivent donc se trouver sur l'hôte. Ils diffèrent de l'amont sur un point : une tâche « Normalise resource limits for Docker Compose » déplace la limite de PID de `pids_limit` vers `deploy.resources.limits.pids`, car Docker Compose 2.38+ refuse un service qui définit `pids_limit` à côté de `deploy.resources.limits`, ce qui fait échouer chaque déploiement avec les limites par défaut. Lors d'une mise à jour de Galvanize, recopiez ces fichiers depuis le dépôt amont en conservant cette tâche, sauf si l'amont a corrigé le problème.
 
 ### Isolation réseau
 

@@ -136,7 +136,7 @@ Other defaults: TCP host ports are randomized per team (`randomize_published_por
 
 ### Galvanize playbooks
 
-The Ansible playbooks (`http`, `tcp`, `custom_compose`) are shipped in `config/galvanize/playbooks/` and copied to `deploy/data/galvanize/playbooks/` on every setup run. They are copies of Galvanize's upstream [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/master/data/playbooks) (v0.7.1): the `data/` bind mount hides the playbooks baked into the Galvanize image, so they must live on the host. When upgrading Galvanize, refresh these files from upstream.
+The Ansible playbooks (`http`, `tcp`, `custom_compose`) are shipped in `config/galvanize/playbooks/` and copied to `deploy/data/galvanize/playbooks/` on every setup run. They are copies of Galvanize's upstream [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/master/data/playbooks) (v0.7.1): the `data/` bind mount hides the playbooks baked into the Galvanize image, so they must live on the host. They differ from upstream in one place: a "Normalise resource limits for Docker Compose" task moves the PID limit from `pids_limit` to `deploy.resources.limits.pids`, because Docker Compose 2.38+ rejects a service that sets `pids_limit` next to `deploy.resources.limits`, which fails every deployment with the default limits. When upgrading Galvanize, refresh these files from upstream and keep that task unless upstream has fixed the issue.
 
 ### Network isolation
 
