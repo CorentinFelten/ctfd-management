@@ -20,9 +20,7 @@ setup_ansible_user() {
     if id "$ANSIBLE_USER" &>/dev/null; then
         log_info "User $ANSIBLE_USER already exists"
         if [[ -f "$private_key_path" && -f "$public_key_path" ]]; then
-            read -rp "Do you want to recreate the Ansible SSH key pair? [Y/n] " -n 1 REPLY
-            echo >&2
-            if [[ -n "$REPLY" && ! $REPLY =~ ^[Yy]$ ]]; then
+            if ! ask_yes_no "Do you want to recreate the Ansible SSH key pair?" y; then
                 regenerate="false"
                 log_info "Keeping the existing SSH key pair"
             fi

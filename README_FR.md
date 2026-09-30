@@ -61,11 +61,14 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 | `--dns-provider NAME`    | Fournisseur DNS pour les certificats TLS wildcard (défaut : `cloudflare`)                 | ❌ Non   |
 | `--acme-email EMAIL`     | Adresse email pour les certificats Let's Encrypt (requis pour HTTPS)                      | ✅ HTTPS |
 | `--no-https`             | Déploiement sans HTTPS (activé automatiquement pour les adresses IP)                     | ❌ Non   |
+| `--yes`                  | Répondre à chaque question par sa valeur par défaut, pour une exécution sans surveillance | ❌ Non   |
 | `--help`                 | Afficher l'aide                                                                           | ❌ Non   |
 
 > `--instancer-url` et `--no-instancer` sont mutuellement exclusifs.
 >
 > `--domain` doit être une adresse joignable par les joueurs : les adresses de loopback (`127.0.0.1`, `localhost`, `::1`) et `0.0.0.0` sont refusées. L'instancer Galvanize se connecte aussi à cette adresse en SSH depuis son conteneur, où une adresse de loopback désigne le conteneur lui-même. Pour un déploiement par IP, utilisez l'IP réelle du serveur (`ip -4 route get 1.1.1.1` l'affiche).
+
+> **Exécution sans surveillance (`--yes`)** : chaque question prend sa réponse par défaut. Lors d'une réexécution, la paire de clés SSH Ansible est donc recréée (le conteneur de l'instancer est recréé pour la prendre en compte). L'assistant DNS ne peut pas demander les identifiants : pour un déploiement HTTPS, ils doivent déjà se trouver dans `deploy/traefik.env`, ou être passés dans l'environnement root (`sudo CF_DNS_API_TOKEN=... ./setup.sh ... --yes`). Sans `--yes`, une question posée sans terminal (CI, cron) échoue avec un message indiquant `--yes`.
 
 ## Exemples d'installation
 

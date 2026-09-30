@@ -61,11 +61,14 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 | `--dns-provider NAME`    | DNS provider for wildcard TLS certs (default: `cloudflare`)                      | ❌ No    |
 | `--acme-email EMAIL`     | Email address for Let's Encrypt certificates (required for HTTPS)                | ✅ HTTPS |
 | `--no-https`             | Deployment without HTTPS (automatically enabled for IP addresses)                | ❌ No    |
+| `--yes`                  | Answer every prompt with its default, for unattended runs (see below)            | ❌ No    |
 | `--help`                 | Display help                                                                     | ❌ No    |
 
 > `--instancer-url` and `--no-instancer` are mutually exclusive.
 >
 > `--domain` must be an address players can reach: loopback addresses (`127.0.0.1`, `localhost`, `::1`) and `0.0.0.0` are rejected. The Galvanize instancer also connects to this address over SSH from inside its container, where a loopback address is the container itself. For an IP deployment, use the server's real IP (`ip -4 route get 1.1.1.1` shows it).
+
+> **Unattended runs (`--yes`)**: every prompt takes its default answer. On a re-run this recreates the Ansible SSH key pair (the instancer container is recreated to pick it up). The DNS provider wizard cannot ask for credentials, so for HTTPS deployments they must already be in `deploy/traefik.env`, or be passed in the root environment (`sudo CF_DNS_API_TOKEN=... ./setup.sh ... --yes`). Without `--yes`, a prompt with no terminal attached (CI, cron) fails with a message pointing to `--yes`.
 
 ## Installation Examples
 
