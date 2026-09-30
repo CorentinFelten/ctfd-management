@@ -26,8 +26,12 @@ install_ctfd() {
         log_success "Backed up existing configs with suffix: $backup_suffix"
     fi
 
-    cp -r "$SCRIPT_DIR/config/traefik" "$deploy_dir/traefik-config"
-    cp -r "$SCRIPT_DIR/config/ctfd"    "$deploy_dir/ctfd"
+    # Copy directory *contents* ("/."): with a plain `cp -r src dest`, an existing
+    # dest would receive a nested src/ subfolder and the live configs would never
+    # be refreshed on re-runs. letsencrypt/ and plugins/ are left untouched.
+    mkdir -p "$deploy_dir/traefik-config" "$deploy_dir/ctfd"
+    cp -r "$SCRIPT_DIR/config/traefik/." "$deploy_dir/traefik-config/"
+    cp -r "$SCRIPT_DIR/config/ctfd/."    "$deploy_dir/ctfd/"
     cp    "$SCRIPT_DIR/config/docker-compose.yml" "$deploy_dir/docker-compose.yml"
     chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$deploy_dir"
     [[ -d "$deploy_dir/data/CTFd/uploads" ]] && chown -R 1001:1001 "$deploy_dir/data/CTFd/uploads"
