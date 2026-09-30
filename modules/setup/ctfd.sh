@@ -7,6 +7,22 @@ readonly _SETUP_CTFD_LOADED=1
 
 readonly DOCKER_PLUGIN_REPO="https://github.com/28Pollux28/zync"
 
+# _existing_secret DEPLOY_DIR ENV_KEY [SECRETS_KEY]
+#   Echoes a previously generated secret: from .env, or else from .secrets
+#   (the plaintext copy written at the end of every setup run), so a lost or
+#   recreated .env does not silently get fresh secrets. Placeholders from the
+#   .env templates do not count.
+_existing_secret() {
+    local deploy_dir="$1" key="$2" secrets_key="${3:-$2}" value=""
+    value="$(grep "^${key}=" "$deploy_dir/.env" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
+    [[ "$value" == "SecretKeyHere" ]] && value=""
+    if [[ -z "$value" && -f "$deploy_dir/.secrets" ]]; then
+        value="$(grep "^${secrets_key}=" "$deploy_dir/.secrets" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
+        [[ -n "$value" ]] && log_info "Recovered $key from $deploy_dir/.secrets"
+    fi
+    printf '%s' "$value"
+}
+
 install_ctfd() {
     local working_dir="${CONFIG[WORKING_DIR]}"
     local deploy_dir="${CONFIG[DEPLOY_DIR]}"
@@ -50,7 +66,7 @@ install_ctfd() {
     local challenge_network="${compose_project_name}_challenges"
 
     local jwt_secret_key
-    jwt_secret_key="$(grep '^ZYNC_JWT_SECRET=' "$deploy_dir/.env" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
+    jwt_secret_key="$(_existing_secret "$deploy_dir" ZYNC_JWT_SECRET JWT_SECRET_KEY)"
     if [[ -n "$jwt_secret_key" ]]; then
         log_info "Existing JWT secret found — preserving it"
     else
@@ -88,18 +104,24 @@ install_ctfd() {
     log_success "Instancer plugin configuration complete"
 
     # ── Generate or reuse secrets ──
-    local env_file="$deploy_dir/.env"
     local secret_key db_password db_root_password
-    secret_key="$(grep '^SECRET_KEY=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
-    db_password="$(grep '^MARIADB_PASSWORD=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
-    db_root_password="$(grep '^MARIADB_ROOT_PASSWORD=' "$env_file" 2>/dev/null | head -n1 | cut -d= -f2- || true)"
+    secret_key="$(_existing_secret "$deploy_dir" SECRET_KEY)"
+    db_password="$(_existing_secret "$deploy_dir" MARIADB_PASSWORD)"
+    db_root_password="$(_existing_secret "$deploy_dir" MARIADB_ROOT_PASSWORD)"
 
-    # Only treat non-placeholder values as existing secrets
-    [[ "$secret_key" == "SecretKeyHere" ]] && secret_key=""
-    [[ "$db_password" == "SecretKeyHere" ]] && db_password=""
+    # MariaDB only applies its passwords when it initialises an empty data
+    # directory: new ones would lock CTFd (and backups) out of existing data
+    local mysql_data_dir="$deploy_dir/data/mysql"
+    if [[ ( -z "$db_password" || -z "$db_root_password" ) \
+          && -d "$mysql_data_dir" && -n "$(ls -A "$mysql_data_dir" 2>/dev/null)" ]]; then
+        error_exit "MariaDB data already exists in $mysql_data_dir, but its passwords were not found in $deploy_dir/.env or $deploy_dir/.secrets.
+  Generating new ones would lock CTFd out of the existing database. Either:
+    • restore MARIADB_PASSWORD and MARIADB_ROOT_PASSWORD in $deploy_dir/.env, or
+    • move $mysql_data_dir away to start with an empty database, then re-run setup."
+    fi
 
     if [[ -n "$secret_key" && -n "$db_password" && -n "$db_root_password" ]]; then
-        log_info "Existing secrets found in .env — preserving them"
+        log_info "Existing secrets found — preserving them"
     else
         log_info "Generating secure secrets..."
         [[ -z "$secret_key" ]]        && secret_key="$(generate_password 32)"
