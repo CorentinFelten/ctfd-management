@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# modules/challenges/compose.sh — Docker Compose validation and deployment for challenges.
+# modules/challenges/compose.sh — Docker Compose validation for challenges.
 # Requires: lib/common.sh, modules/ctfd/yaml.sh
 
 [[ -n "${_CHALL_COMPOSE_LOADED:-}" ]] && return 0
@@ -92,36 +92,4 @@ validate_compose_image_tags() {
     done
 
     [[ "$ok" == "true" ]]
-}
-
-# ── Deploy a single challenge's docker-compose stack ────────────────────────
-
-deploy_single_compose() {
-    local challenge_path="$1"
-    local challenge_name compose_file
-
-    challenge_name="$(basename "$challenge_path")"
-    compose_file="$(get_compose_file "$challenge_path")" || {
-        log_debug "No compose file found for: $challenge_name"
-        return 0
-    }
-
-    log_info "Deploying docker-compose for challenge: $challenge_name"
-
-    if [[ "${CONFIG[DRY_RUN]}" == "false" ]]; then
-        local compose_output exit_code=0
-
-        compose_output="$(cd "$challenge_path" && docker compose up -d 2>&1)" || exit_code=$?
-
-        if [[ $exit_code -eq 0 ]]; then
-            log_success "Successfully deployed compose stack: $challenge_name"
-            log_debug "Compose output: $compose_output"
-        else
-            log_error "Failed to deploy compose stack: $challenge_name"
-            log_error "Error output: $compose_output"
-            return 1
-        fi
-    else
-        log_info "Would deploy: docker compose -f '${compose_file}' up -d"
-    fi
 }

@@ -2,7 +2,7 @@
 # lib/discovery.sh — Challenge discovery, filtering, and metadata parsing.
 # Requires: lib/common.sh
 #
-# Docker Compose validation and deployment live in modules/challenges/compose.sh
+# Docker Compose validation lives in modules/challenges/compose.sh
 # to keep this library free of module-level dependencies.
 
 [[ -n "${_LIB_DISCOVERY_LOADED:-}" ]] && return 0

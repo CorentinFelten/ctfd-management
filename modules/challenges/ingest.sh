@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# modules/challenges/ingest.sh — Install challenges into CTFd via ctfcli.
+# modules/challenges/ingest.sh — Install challenges into CTFd via its REST API.
 # Requires: lib/common.sh, lib/discovery.sh
 
 [[ -n "${_CHALL_INGEST_LOADED:-}" ]] && return 0
@@ -184,7 +184,7 @@ ingest_challenges() {
         log_info "[$current/$total] Installing $cname..."
 
         if [[ "${CONFIG[DRY_RUN]}" == "true" ]]; then
-            log_info "Would install: ctf challenge install '${path}'"
+            log_info "Would install: ${path}"
             ((++ok))
             continue
         fi
