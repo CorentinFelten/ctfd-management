@@ -347,7 +347,11 @@ Si le flag `--theme` est utilisé :
 
 ### 5. Synchronisation
 - Met à jour les challenges existants **sur place** : le challenge est mis à jour via PATCH, son ID CTFd ne change donc jamais.
-- **Repousse les sous-ressources possédées** — flags, indices, tags, topics et fichiers — en les supprimant puis en les recréant depuis `challenge.yml`, afin que toute modification soit réellement propagée.
+- **Propage les modifications des sous-ressources possédées** sans perdre l'état des joueurs :
+  - **Les indices sont mis à jour sur place**, afin que les joueurs conservent les indices déjà débloqués (CTFd suit les déblocages par ID d'indice). Le Nᵉ indice de `challenge.yml` met à jour le Nᵉ indice existant : gardez l'ordre des indices stable et ajoutez les nouveaux à la fin. Les indices retirés de `challenge.yml` sont supprimés, et les joueurs y perdent l'accès.
+  - **Les flags sont comparés** : les nouveaux flags sont ajoutés avant la suppression des anciens, le challenge n'est donc jamais sans flag valide.
+  - **Les fichiers sont comparés** par contenu (SHA-1) et par nom : les fichiers inchangés sont conservés et gardent leur URL de téléchargement ; les fichiers nouveaux ou modifiés sont envoyés, les obsolètes supprimés.
+  - Les tags et topics, qui ne portent aucun état joueur, sont supprimés puis recréés.
 - **Les requirements sont résolus en une seconde passe**, une fois que tous les challenges ont été synchronisés, afin qu'un prérequis référencé par son nom soit résolu correctement quel que soit l'ordre de traitement.
 - Option de sauvegarde avant la synchronisation, et mode `--force` pour l'écrasement.
 
