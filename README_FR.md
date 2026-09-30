@@ -113,6 +113,20 @@ Par défaut, `setup.sh` déploie Galvanize dans le même stack Docker Compose qu
 - **`--instancer-url URL`** — pointer CTFd vers une instance Galvanize déjà en cours d'exécution ; aucun conteneur local n'est démarré.
 - **`--no-instancer`** — ignorer Galvanize entièrement lors de l'installation. Vous pouvez le déployer indépendamment plus tard avec sa propre configuration (voir `config/galvanize/config.yaml` pour le modèle de configuration et `config/galvanize/playbooks/` pour les playbooks Ansible). `ZYNC_DEPLOYER_URL` vaut `https://instancer.<domaine>` par défaut ; modifiez-le dans `deploy/.env` si votre instancer est ailleurs.
 
+### Configuration de Galvanize
+
+Le modèle `config/galvanize/config.yaml` est copié vers `deploy/data/galvanize/config.yaml` à **chaque** exécution de `setup.sh` : faites donc vos modifications durables dans le modèle plutôt que dans la copie déployée. Le script renseigne ensuite :
+
+| Clé | Valeur |
+|-----|--------|
+| `auth.jwt_secret` | Secret généré (partagé avec CTFd via `ZYNC_JWT_SECRET`) |
+| `instancer.ansible.user` / `inventory` | `ansible-user` sur l'hôte `--domain` |
+| `instancer.instancer_host` | `--domain`, ou `<ip>.sslip.io` pour les déploiements sur IP (DNS wildcard) |
+| `instancer.redis.addr` / `db` | `redis:6379`, base `1` (CTFd utilise la base `0` du même Redis) |
+| `instancer.extra_deployment_parameters.traefik_network` | `<COMPOSE_PROJECT_NAME>_challenges` (voir [Isolation réseau](#isolation-réseau)) |
+
+Autres valeurs par défaut : les ports hôtes TCP sont tirés au hasard pour chaque équipe (`randomize_published_ports: true`), et chaque conteneur de challenge est limité à 1 CPU, 512 Mo de RAM et 256 PID, sauf si le challenge surcharge `resource_limits`.
+
 ### Playbooks Galvanize
 
 Les playbooks Ansible (`http`, `tcp`, `custom_compose`) sont fournis dans `config/galvanize/playbooks/` et copiés vers `deploy/data/galvanize/playbooks/` à chaque exécution du setup. Ce sont des copies du dossier [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/master/data/playbooks) de Galvanize (v0.7.1) : le montage `data/` masque les playbooks intégrés à l'image Galvanize, ils doivent donc se trouver sur l'hôte. Lors d'une mise à jour de Galvanize, recopiez ces fichiers depuis le dépôt amont.

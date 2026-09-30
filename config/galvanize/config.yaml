@@ -19,9 +19,9 @@ instancer:
     username: "prometheus" # Basic-auth username for the /metrics endpoint (default: "prometheus")
     password: ""           # Basic-auth password; leave empty to disable authentication
   redis:
-    addr: "localhost:6379" # Redis address for job queue (leave empty to disable queue and use direct goroutines)
+    addr: "redis:6379" # Redis address for job queue (leave empty to disable queue and use direct goroutines)
     password: "" # Redis password (optional)
-    db: 0 # Redis database number (default: 0)
+    db: 1 # Redis database number. CTFd uses db 0 on the shared Redis, so Galvanize gets its own db
   ansible:
     inventory: "your-server-ip," # Comma at the end for single host. Use IP or hostname of the target hosts
     private_key: "/home/galvanize/.ssh/ansible-ssh" # Path to SSH private key (replace this if you edit it in the docker compose)
@@ -29,6 +29,7 @@ instancer:
   default_resource_limits: # Default container resource limits applied to all deployments (can be overridden per challenge)
     cpus: "1"             # CPU limit per container (e.g. "0.5", "1", "2")
     memory: "512M"        # Memory limit per container (e.g. "256M", "512M", "1G")
+    pids_limit: 256       # Max number of PIDs per container (fork bomb protection)
   extra_deployment_parameters: # Additional parameters for deployment (added to vars in Ansible)
     # Name of the external Docker network Traefik watches on the target host(s).
     # Required for http challenges and for http exposures in compose challenges.

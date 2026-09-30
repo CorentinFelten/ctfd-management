@@ -97,6 +97,8 @@ configure_instancer() {
     fi
     yq -i ".instancer.instancer_host = \"${instancer_host}\"" "$config_path"
     yq -i ".instancer.redis.addr = \"redis:6379\"" "$config_path"
+    # CTFd uses Redis db 0; keep Galvanize's job queue in its own db
+    yq -i ".instancer.redis.db = 1" "$config_path"
     yq -i ".instancer.extra_deployment_parameters.traefik_network = \"${challenge_network}\"" "$config_path"
 
     log_success "Local instancer setup complete"

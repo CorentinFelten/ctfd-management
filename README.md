@@ -113,6 +113,20 @@ By default, `setup.sh` deploys Galvanize as part of the CTFd Docker Compose stac
 - **`--instancer-url URL`** — point CTFd at an already-running Galvanize instance; no local container is started.
 - **`--no-instancer`** — skip Galvanize entirely during setup. You can deploy it independently later with its own config (see `config/galvanize/config.yaml` for the config template and `config/galvanize/playbooks/` for the Ansible playbooks). `ZYNC_DEPLOYER_URL` defaults to `https://instancer.<domain>`; update it in `deploy/.env` if your instancer lives elsewhere.
 
+### Galvanize configuration
+
+The template `config/galvanize/config.yaml` is copied to `deploy/data/galvanize/config.yaml` on **every** run of `setup.sh`, so make lasting changes in the template rather than in the deployed copy. The setup then fills in:
+
+| Key | Value |
+|-----|-------|
+| `auth.jwt_secret` | Generated secret (shared with CTFd as `ZYNC_JWT_SECRET`) |
+| `instancer.ansible.user` / `inventory` | `ansible-user` on the `--domain` host |
+| `instancer.instancer_host` | `--domain`, or `<ip>.sslip.io` for IP deployments (wildcard DNS) |
+| `instancer.redis.addr` / `db` | `redis:6379`, db `1` (CTFd uses db `0` on the same Redis) |
+| `instancer.extra_deployment_parameters.traefik_network` | `<COMPOSE_PROJECT_NAME>_challenges` (see [Network isolation](#network-isolation)) |
+
+Other defaults: TCP host ports are randomized per team (`randomize_published_ports: true`), and every challenge container is limited to 1 CPU, 512 MB of RAM and 256 PIDs unless the challenge overrides `resource_limits`.
+
 ### Galvanize playbooks
 
 The Ansible playbooks (`http`, `tcp`, `custom_compose`) are shipped in `config/galvanize/playbooks/` and copied to `deploy/data/galvanize/playbooks/` on every setup run. They are copies of Galvanize's upstream [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/master/data/playbooks) (v0.7.1): the `data/` bind mount hides the playbooks baked into the Galvanize image, so they must live on the host. When upgrading Galvanize, refresh these files from upstream.
