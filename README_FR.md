@@ -113,6 +113,8 @@ Par défaut, `setup.sh` déploie Galvanize dans le même stack Docker Compose qu
 - **`--instancer-url URL`** — pointer CTFd vers une instance Galvanize déjà en cours d'exécution ; aucun conteneur local n'est démarré.
 - **`--no-instancer`** — ignorer Galvanize entièrement lors de l'installation. Vous pouvez le déployer indépendamment plus tard avec sa propre configuration (voir `config/galvanize/config.yaml` pour le modèle de configuration et `config/galvanize/playbooks/` pour les playbooks Ansible). `ZYNC_DEPLOYER_URL` vaut `https://instancer.<domaine>` par défaut ; modifiez-le dans `deploy/.env` si votre instancer est ailleurs.
 
+`setup.sh` enregistre ce choix dans `deploy/.env` via `COMPOSE_PROFILES` (`instancer` pour l'instancer intégré, vide sinon) : un simple `docker compose up -d`, `down` ou `pull` lancé depuis `deploy/` ne démarre et ne gère l'instancer que s'il est hébergé localement. Abandonner l'instancer intégré arrête et supprime son conteneur à la prochaine exécution du setup.
+
 ### Configuration de Galvanize
 
 Le modèle `config/galvanize/config.yaml` est copié vers `deploy/data/galvanize/config.yaml` à **chaque** exécution de `setup.sh` : faites donc vos modifications durables dans le modèle plutôt que dans la copie déployée. Le script renseigne ensuite :

@@ -168,6 +168,14 @@ install_ctfd() {
     fi
     setup_env_key INSTANCER_MODE "$instancer_mode"
 
+    # Docker Compose reads COMPOSE_PROFILES from .env, so a manual
+    # `docker compose up -d`/`down`/`pull` in the deploy dir includes the
+    # instancer exactly when it runs locally. Rewritten on every run so it
+    # follows switches between local, external and no instancer.
+    local compose_profiles=""
+    [[ "$use_local_instancer" == "true" ]] && compose_profiles="instancer"
+    setup_env_key COMPOSE_PROFILES "$compose_profiles"
+
     # ── Traefik config selection + CA auto-switch ──
     # Operate on DEPLOY_DIR copies — never touch tracked repo files
     local traefik_cfg="$deploy_dir/traefik-config/traefik.yml"
@@ -277,6 +285,13 @@ install_ctfd() {
     fi
 
     # ── Start containers ──
+    # A previously local instancer is no longer wanted: stop and remove it,
+    # since `up -d` leaves containers of inactive profiles running.
+    if [[ "$use_local_instancer" != "true" ]]; then
+        docker compose -p "$compose_project_name" -f "$compose_file" --profile instancer \
+            rm --stop --force instancer >/dev/null 2>&1 || true
+    fi
+
     log_info "Starting CTFd containers..."
     "${compose_cmd[@]}" up -d
     log_success "CTFd containers started successfully"
