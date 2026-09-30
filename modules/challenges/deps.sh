@@ -136,20 +136,22 @@ initialize_ctfd_config() {
     # Allow Ctrl+C to cancel interactive input
     trap 'echo >&2; error_exit "Configuration aborted by user"' INT
     
-    # Auto-detect CTFd URL from the .env file produced by setup.sh (lives in DEPLOY_DIR)
+    # Auto-detect the CTFd URL from the .env file produced by setup.sh (lives in
+    # DEPLOY_DIR). CTFD_URL is rewritten on every setup run with the right
+    # scheme; older files without it fall back to https://BASE_DOMAIN.
     local env_file="${CONFIG[WORKING_DIR]}/deploy/.env"
-    local base_domain="" enable_tls=""
-    
+    local detected_url=""
+
     if [[ -f "$env_file" ]]; then
-        base_domain="$(read_env_value "BASE_DOMAIN" "$env_file")"
-        enable_tls="$(read_env_value "ENABLE_TLS" "$env_file")"
+        detected_url="$(read_env_value "CTFD_URL" "$env_file")"
+        if [[ -z "$detected_url" ]]; then
+            local base_domain
+            base_domain="$(read_env_value "BASE_DOMAIN" "$env_file")"
+            [[ -n "$base_domain" ]] && detected_url="https://${base_domain}"
+        fi
     fi
-    
-    if [[ -n "$base_domain" ]]; then
-        local scheme="https"
-        [[ "${enable_tls,,}" == "false" ]] && scheme="http"
-        local detected_url="${scheme}://${base_domain}"
-        
+
+    if [[ -n "$detected_url" ]]; then
         echo >&2
         read -rp "Connect to ${detected_url} ? [Y/n] " -n 1 confirm || {
             echo >&2
