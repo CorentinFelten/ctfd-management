@@ -91,6 +91,18 @@ for pb in config/galvanize/playbooks/*.yaml; do
 done
 pass "Galvanize playbooks are deployed"
 
+# ── Data ownership ──────────────────────────────────────────────────────────
+# Re-runs must not re-own the containers' data (MariaDB then cannot read its
+# own tables until it restarts).
+
+section "Data ownership"
+
+for d in mysql redis; do
+    owned="$(sudo find "$DEPLOY_DIR/data/$d" -user "$USER" -print -quit)"
+    [[ -z "$owned" ]] || fail "data/$d contains files owned by $USER (e.g. $owned)"
+done
+pass "data/mysql and data/redis are left to their containers"
+
 # ── Ansible SSH access (what Galvanize uses to deploy challenges) ──────────
 
 section "Ansible SSH"
