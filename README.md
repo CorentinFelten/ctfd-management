@@ -426,21 +426,15 @@ hints:
 value: 5
 type: zync                            # or type: dynamic / static
 
-# Following options are for type: zync only. See https://github.com/28Pollux28/galvanize/blob/master/data/challenges/example/challenge.yml for up-to-date config
+# Following options are for type: zync only. See https://github.com/28Pollux28/galvanize/tree/master/data/challenges/example for up-to-date examples (http, tcp, custom_compose)
 
-playbook_name: http                   # Use 'http' for web challenges, 'tcp' for TCP challenges, or 'custom_compose' for custom Docker Compose setups
+playbook_name: http                   # 'http' (single container behind Traefik, HTTPS subdomain), 'tcp' (published ports), or 'custom_compose' (see below)
 deploy_parameters:
-  image: nginx:alpine                 # Docker image to deploy
+  image: nginx:alpine                 # Docker image to deploy ('http' and 'tcp' playbooks)
   unique: false                       # Set to true if there needs to be a unique instance for all players
+  http_port: 80                       # Container port Traefik forwards to (Only for 'http' playbooks, default: 80)
   published_ports:                    # Ports to expose from the container (Only for 'tcp' playbooks)
-    - 80                              # Port to expose
-  compose_definition: |-              # Docker Compose definition (Only for 'custom_compose' playbooks)
-    version: '3'
-    services:
-      web:
-        image: nginx:alpine
-        ports:
-          - "80:80"
+    - 1337                            # Random host port per team; "22/ssh" adds a URL scheme hint, "8080:80/http" is a fixed mapping
   env:                                # Environment variables passed to the container
     FLAG: "flag{flag_to_find_in_env}"
     TZ: Europe/Zurich
@@ -449,6 +443,30 @@ deploy_parameters:
     memory: "512M"
     pids_limit: 256
 ```
+
+### Multi-service challenges (Docker Compose)
+
+For challenges that need several containers, put a standard Compose file (`compose.yaml`, `compose.yml`, `docker-compose.yaml` or `docker-compose.yml`) next to `challenge.yml`. Galvanize detects it and defaults `playbook_name` to `custom_compose`. Declare which services players reach with an `expose` block instead of hand-writing Traefik labels, networks or host ports:
+
+```yaml
+type: zync
+deploy_parameters:
+  unique: false
+  expose:
+    - service: web      # routed through Traefik -> https://<instance>.<domain>/
+      port: 80
+      type: http
+    - service: ssh      # published on a random host port per team
+      port: 22
+      type: tcp
+      scheme: ssh       # optional, only changes the displayed connection URL
+```
+
+Notes:
+
+- `challenges.sh` builds every service that has a `build:` key and, if it has no `image:`, tags it `<challenge>_<service>:latest` in the compose file so Galvanize can deploy the locally built image.
+- Do not set `container_name` or publish `ports:` yourself: Galvanize names each project per team and wires the networking from `expose`.
+- `build:` contexts and bind mounts are resolved on the deploy host, so prefer pre-built images.
 
 ## Generated Configuration
 
