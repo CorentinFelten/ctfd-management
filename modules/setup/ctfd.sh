@@ -23,6 +23,23 @@ _existing_secret() {
     printf '%s' "$value"
 }
 
+# Number of config backups kept per kind (traefik-config, ctfd, compose file)
+readonly CONFIG_BACKUPS_KEPT=3
+
+# _prune_config_backups DEPLOY_DIR
+#   Keeps only the most recent config backups made by previous setup runs
+#   (their timestamped suffixes sort chronologically).
+_prune_config_backups() {
+    local deploy_dir="$1" prefix old
+    for prefix in traefik-config ctfd docker-compose.yml; do
+        while IFS= read -r old; do
+            [[ -n "$old" ]] || continue
+            rm -rf "$old"
+            log_debug "Removed old config backup: $old"
+        done < <(compgen -G "$deploy_dir/${prefix}.backup_*" | sort -r | tail -n +$((CONFIG_BACKUPS_KEPT + 1)))
+    done
+}
+
 install_ctfd() {
     local working_dir="${CONFIG[WORKING_DIR]}"
     local deploy_dir="${CONFIG[DEPLOY_DIR]}"
@@ -36,10 +53,19 @@ install_ctfd() {
     if [[ -f "$deploy_dir/docker-compose.yml" ]]; then
         local backup_suffix="backup_$(date +%Y%m%d_%H%M%S)"
         log_info "Existing deployment detected — backing up config files"
-        [[ -d "$deploy_dir/traefik-config" ]] && cp -r "$deploy_dir/traefik-config" "$deploy_dir/traefik-config.${backup_suffix}"
-        [[ -d "$deploy_dir/ctfd" ]]           && cp -r "$deploy_dir/ctfd" "$deploy_dir/ctfd.${backup_suffix}"
+        # Config only: the certificate store (setup never modifies it, and it
+        # holds private keys) and the plugin clones are left out
+        if [[ -d "$deploy_dir/traefik-config" ]]; then
+            cp -r "$deploy_dir/traefik-config" "$deploy_dir/traefik-config.${backup_suffix}"
+            rm -rf "$deploy_dir/traefik-config.${backup_suffix}/letsencrypt"
+        fi
+        if [[ -d "$deploy_dir/ctfd" ]]; then
+            cp -r "$deploy_dir/ctfd" "$deploy_dir/ctfd.${backup_suffix}"
+            rm -rf "$deploy_dir/ctfd.${backup_suffix}/plugins"
+        fi
         cp "$deploy_dir/docker-compose.yml" "$deploy_dir/docker-compose.yml.${backup_suffix}"
         log_success "Backed up existing configs with suffix: $backup_suffix"
+        _prune_config_backups "$deploy_dir"
     fi
 
     # Copy directory *contents* ("/."): with a plain `cp -r src dest`, an existing
@@ -263,16 +289,16 @@ install_ctfd() {
     # 2. Domain, DNS provider, and ACME email
     local domain="${CONFIG[DOMAIN]}"
     log_info "Patching Traefik production config with domain: $domain"
-    sed -i "s|__BASE_DOMAIN__|${domain}|g" "$traefik_cfg"
+    sed -i "s|__BASE_DOMAIN__|$(sed_escape_replacement "$domain")|g" "$traefik_cfg"
 
     local dns_provider="${CONFIG[DNS_PROVIDER]:-cloudflare}"
     log_info "Setting ACME DNS-01 challenge provider to: $dns_provider"
-    sed -i "s|__DNS_PROVIDER__|${dns_provider}|g" "$traefik_cfg"
+    sed -i "s|__DNS_PROVIDER__|$(sed_escape_replacement "$dns_provider")|g" "$traefik_cfg"
     setup_env_key DNS_PROVIDER "$dns_provider"
 
     local acme_email="${CONFIG[ACME_EMAIL]}"
     log_info "Setting ACME email to: $acme_email"
-    sed -i "s|__ACME_EMAIL__|${acme_email}|g" "$traefik_cfg"
+    sed -i "s|__ACME_EMAIL__|$(sed_escape_replacement "$acme_email")|g" "$traefik_cfg"
     setup_env_key ACME_EMAIL "$acme_email"
 
     log_success "Traefik wildcard TLS configuration complete (domain: $domain, provider: $dns_provider)"

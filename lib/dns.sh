@@ -152,7 +152,9 @@ dns_setup_wizard() {
 
         if [[ -z "$var_value" ]]; then
             while true; do
-                read -rp "  $var_name: " var_value
+                # -s: credentials are not echoed to the terminal
+                read -rsp "  $var_name: " var_value
+                echo >&2
                 if [[ -n "$var_value" ]]; then
                     break
                 fi
