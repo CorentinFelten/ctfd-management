@@ -163,8 +163,11 @@ _ctfd_delete_subresources() {
     done <<< "$ids"
 }
 
+# Must list via /challenges/<id>/files: /api/v1/files ignores unknown query
+# parameters such as challenge_id and returns every file on the platform
+# (all challenges' files and page uploads), which would then all be deleted.
 ctfd_delete_challenge_files() {
-    _ctfd_delete_subresources "$1" "/api/v1/files?challenge_id=$1" "/api/v1/files/%s" "files"
+    _ctfd_delete_subresources "$1" "/api/v1/challenges/$1/files" "/api/v1/files/%s" "files"
 }
 
 # Owned sub-resource deleters used by sync to clear-then-recreate. None of these
