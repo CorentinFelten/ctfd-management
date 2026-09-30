@@ -66,6 +66,55 @@ read_env_value() {
     printf '%s' "$value"
 }
 
+# ── Is the Galvanize instancer hosted on this machine? ──────────────────────
+#
+# is_local_instancer
+#   Returns 0 when Galvanize deploys challenges on this host, i.e. when images
+#   built here are the ones it will run. Detection order:
+#     1. INSTANCER_MODE written to <working>/deploy/.env by setup.sh:
+#        "local" → yes, "external" → no, "none" → keep looking (Galvanize may
+#        have been deployed separately on this host later).
+#     2. Deployments made before INSTANCER_MODE existed: GALVANIZE_CONFIG_PATH,
+#        only set for a local instancer, pointing at an existing file.
+#     3. A running galvanize-instancer container (standalone Galvanize).
+#   Sets _INSTANCER_DETECTION to a human-readable reason for logging.
+
+_INSTANCER_DETECTION=""
+
+is_local_instancer() {
+    local env_file="${CONFIG[WORKING_DIR]}/deploy/.env"
+    local mode="" galvanize_config=""
+
+    if [[ -f "$env_file" ]]; then
+        mode="$(read_env_value "INSTANCER_MODE" "$env_file")"
+        galvanize_config="$(read_env_value "GALVANIZE_CONFIG_PATH" "$env_file")"
+    fi
+
+    case "$mode" in
+        local)
+            _INSTANCER_DETECTION="INSTANCER_MODE=local in $env_file"
+            return 0 ;;
+        external)
+            _INSTANCER_DETECTION="INSTANCER_MODE=external in $env_file"
+            return 1 ;;
+        "")
+            if [[ -n "$galvanize_config" && -f "$galvanize_config" ]]; then
+                _INSTANCER_DETECTION="local Galvanize config found at $galvanize_config"
+                return 0
+            fi
+            ;;
+    esac
+
+    if command -v docker &>/dev/null \
+        && [[ -n "$(docker ps -q --filter 'name=^/?galvanize-instancer$' 2>/dev/null)" ]]; then
+        _INSTANCER_DETECTION="galvanize-instancer container running on this host"
+        return 0
+    fi
+
+    _INSTANCER_DETECTION="no local Galvanize instancer detected"
+    return 1
+}
+
 # ── Load a KEY=VALUE config file into the CONFIG associative array ───────────
 
 load_config_file() {

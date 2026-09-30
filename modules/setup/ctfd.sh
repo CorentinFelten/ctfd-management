@@ -143,6 +143,16 @@ install_ctfd() {
         setup_instancer
     fi
 
+    # Recorded for challenges.sh: challenge images only need to be built on
+    # this host when Galvanize deploys here (see is_local_instancer).
+    local instancer_mode="local"
+    if [[ -n "${CONFIG[INSTANCER_URL]:-}" ]]; then
+        instancer_mode="external"
+    elif [[ -n "${CONFIG[NO_INSTANCER]:-}" ]]; then
+        instancer_mode="none"
+    fi
+    setup_env_key INSTANCER_MODE "$instancer_mode"
+
     # ── Traefik config selection + CA auto-switch ──
     # Operate on DEPLOY_DIR copies — never touch tracked repo files
     local traefik_cfg="$deploy_dir/traefik-config/traefik.yml"

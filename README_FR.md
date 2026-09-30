@@ -248,6 +248,7 @@ seule fois.
 | `--dry-run`           | Mode simulation (affiche les actions sans les exécuter)             |
 | `--force`             | Forcer les opérations (reconstruction, écrasement)                  |
 | `--parallel-builds N` | Nombre de constructions parallèles (défaut : 4)                     |
+| `--build-images MODE` | Construction des images : `auto` (défaut), `yes`, `no`              |
 
 ## Options de debug
 
@@ -333,6 +334,7 @@ Si le flag `--theme` est utilisé :
 - Identification des challenges Docker et statiques
 
 ### 3. Construction des images Docker
+- Uniquement lorsque l'instancer Galvanize est hébergé sur cette machine : Galvanize déploie les images depuis son propre hôte Docker, donc des images construites ailleurs ne sont jamais utilisées. La détection (`--build-images auto`) lit `INSTANCER_MODE` dans `<working-folder>/deploy/.env` (écrit par `setup.sh` : `local`, `external` ou `none`), se rabat sur un `GALVANIZE_CONFIG_PATH` local pour les anciens déploiements, puis sur un conteneur `galvanize-instancer` en cours d'exécution. Sans instancer local, `all` passe directement à l'ingestion et `build` ne fait rien. Forcer avec `--build-images yes` ou `--build-images no`.
 - Construction séquentielle ou parallèle des images
 - Support du mode `--force` pour une reconstruction complète
 - Gestion des erreurs avec rapports détaillés
@@ -469,7 +471,7 @@ deploy_parameters:
 
 Notes :
 
-- `challenges.sh` construit chaque service ayant une clé `build:` et, s'il n'a pas d'`image:`, l'étiquette `<challenge>_<service>:latest` dans le fichier compose pour que Galvanize puisse déployer l'image construite localement.
+- `challenges.sh` construit chaque service ayant une clé `build:` et, s'il n'a pas d'`image:`, l'étiquette `<challenge>_<service>:latest` dans le fichier compose pour que Galvanize puisse déployer l'image construite localement. Avec un instancer distant, rien n'est construit : donnez à chaque service `build:` une `image:` étiquetée que l'hôte Docker de l'instancer peut récupérer (l'ingestion rejette les services construits sans image).
 - Ne définissez ni `container_name` ni `ports:` vous-même : Galvanize nomme chaque projet par équipe et câble le réseau à partir de `expose`.
 - Les contextes `build:` et les montages sont résolus sur l'hôte de déploiement : privilégiez des images pré-construites.
 

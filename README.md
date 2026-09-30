@@ -243,6 +243,7 @@ subsequent runs, so you are only prompted once.
 | `--dry-run`           | Simulation mode (shows actions without executing them) |
 | `--force`             | Force operations (rebuild, overwrite)                  |
 | `--parallel-builds N` | Number of parallel builds (default: 4)                 |
+| `--build-images MODE` | Build challenge images: `auto` (default), `yes`, `no`  |
 
 ## Debug Options
 
@@ -328,6 +329,7 @@ If the `--theme` flag is used:
 - Identify Docker and static challenges
 
 ### 3. Docker Image Building
+- Only runs when the Galvanize instancer is hosted on this machine: Galvanize deploys images from its own Docker host, so images built elsewhere are never used. Detection (`--build-images auto`) reads `INSTANCER_MODE` from `<working-folder>/deploy/.env` (written by `setup.sh`: `local`, `external` or `none`), falls back to a local `GALVANIZE_CONFIG_PATH` for older deployments, then to a running `galvanize-instancer` container. When no local instancer is found, `all` goes straight to ingestion and `build` does nothing. Override with `--build-images yes` or `--build-images no`.
 - Sequential or parallel image building
 - Support for `--force` mode for complete rebuild
 - Error handling with detailed reports
@@ -464,7 +466,7 @@ deploy_parameters:
 
 Notes:
 
-- `challenges.sh` builds every service that has a `build:` key and, if it has no `image:`, tags it `<challenge>_<service>:latest` in the compose file so Galvanize can deploy the locally built image.
+- `challenges.sh` builds every service that has a `build:` key and, if it has no `image:`, tags it `<challenge>_<service>:latest` in the compose file so Galvanize can deploy the locally built image. With a remote instancer nothing is built: give each `build:` service a tagged `image:` that the instancer's Docker host can pull (ingestion rejects built services without one).
 - Do not set `container_name` or publish `ports:` yourself: Galvanize names each project per team and wires the networking from `expose`.
 - `build:` contexts and bind mounts are resolved on the deploy host, so prefer pre-built images.
 
