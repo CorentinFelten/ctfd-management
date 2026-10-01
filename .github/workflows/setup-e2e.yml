@@ -1,8 +1,16 @@
 name: Setup end-to-end
 
-# Runs setup.sh for real on a fresh runner (no-HTTPS mode, local Galvanize
-# instancer), checks the resulting stack, deploys a challenge instance through
-# Galvanize, then re-runs setup to check that re-runs are safe.
+# Runs setup.sh for real on a fresh runner with the local Galvanize instancer,
+# in no-HTTPS mode and in HTTPS mode, checks the resulting stack, deploys a
+# challenge instance through Galvanize, then re-runs setup to check that
+# re-runs are safe.
+#
+# HTTPS mode uses Pebble, Let's Encrypt's test ACME server, on the runner: the
+# domain is <runner-ip>.sslip.io (public wildcard DNS to the runner's IP), and
+# the DNS-01 challenge goes to lego's exec provider running a no-op, since
+# Pebble is told to accept every challenge. Everything else (setup's DNS
+# wizard and Traefik config patching, certificate issuance, strict TLS to
+# CTFd, the instancer and challenge instances) runs as on a real server.
 
 on:
   push:
@@ -19,12 +27,18 @@ permissions:
   contents: read
 
 jobs:
-  setup-no-https:
-    name: setup.sh --no-https (Ubuntu 24.04)
+  setup:
+    name: setup.sh ${{ matrix.mode == 'https' && 'HTTPS (Pebble)' || '--no-https' }} (Ubuntu 24.04)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [http, https]
     env:
       E2E: .github/scripts/setup-e2e
+      MODE: ${{ matrix.mode }}
+      PEBBLE_IMAGE: ghcr.io/letsencrypt/pebble:2.10.1
     steps:
       - uses: actions/checkout@v7
 
@@ -37,11 +51,27 @@ jobs:
           sudo systemctl enable --now ssh
           server_ip="$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
           [[ -n "$server_ip" ]] || { echo "::error::Could not determine the runner's IP address"; exit 1; }
-          echo "SERVER_IP=$server_ip" >> "$GITHUB_ENV"
-          echo "DEPLOY_DIR=$HOME/deploy" >> "$GITHUB_ENV"
-          echo "Server IP: $server_ip"
+
+          if [[ "$MODE" == https ]]; then
+            domain="${server_ip//./-}.sslip.io"
+            setup_args="--domain $domain --acme-email ci@example.org --dns-provider cloudflare"
+            getent hosts "$domain" "instancer.$domain" \
+              || { echo "::error::$domain does not resolve (sslip.io unreachable?)"; exit 1; }
+          else
+            domain="$server_ip"
+            setup_args="--domain $server_ip"
+          fi
+
+          {
+            echo "SERVER_IP=$server_ip"
+            echo "DOMAIN=$domain"
+            echo "SETUP_ARGS=$setup_args --working-folder $HOME --yes"
+            echo "DEPLOY_DIR=$HOME/deploy"
+          } >> "$GITHUB_ENV"
+          echo "Server IP: $server_ip, domain: $domain"
 
       - name: setup.sh rejects a loopback --domain
+        if: matrix.mode == 'http'
         run: |
           if output="$(./setup.sh --domain 127.0.0.1 --yes 2>&1)"; then
             echo "$output"
@@ -51,9 +81,61 @@ jobs:
           echo "$output"
           grep -q "loopback address" <<< "$output"
 
+      - name: Start Pebble (HTTPS)
+        if: matrix.mode == 'https'
+        run: |
+          # No nonce rejections: they only test client retries and make runs flaky
+          docker run -d --name pebble --restart unless-stopped \
+            -p 14000:14000 -p 15000:15000 \
+            -e PEBBLE_VA_ALWAYS_VALID=1 -e PEBBLE_VA_NOSLEEP=1 -e PEBBLE_WFE_NONCEREJECT=0 \
+            "$PEBBLE_IMAGE"
+          # CA of Pebble's own HTTPS endpoint (not of the certificates it issues),
+          # placed where the Traefik container sees it (letsencrypt/ is mounted)
+          mkdir -p "$DEPLOY_DIR/traefik-config/letsencrypt"
+          docker cp pebble:/test/certs/pebble.minica.pem "$DEPLOY_DIR/traefik-config/letsencrypt/pebble-minica.pem"
+          for _ in $(seq 30); do
+            curl -fsS --cacert "$DEPLOY_DIR/traefik-config/letsencrypt/pebble-minica.pem" \
+              https://localhost:14000/dir >/dev/null && exit 0
+            sleep 2
+          done
+          echo "::error::Pebble did not start"; docker logs pebble; exit 1
+
+      # CI only: the checkout's Traefik template is pointed at Pebble instead of
+      # Let's Encrypt, and the DNS-01 challenge at lego's exec provider. setup.sh
+      # copies and patches this template as usual.
+      - name: Point the Traefik template at Pebble (HTTPS)
+        if: matrix.mode == 'https'
+        run: |
+          yq -i '
+            .certificatesResolvers.letsencrypt.acme.caServer = "https://" + strenv(SERVER_IP) + ":14000/dir" |
+            .certificatesResolvers.letsencrypt.acme.caServerName = "pebble" |
+            .certificatesResolvers.letsencrypt.acme.caCertificates = ["/etc/traefik/letsencrypt/pebble-minica.pem"] |
+            .certificatesResolvers.letsencrypt.acme.dnsChallenge.provider = "exec" |
+            .certificatesResolvers.letsencrypt.acme.dnsChallenge.propagation.disableChecks = true
+          ' config/traefik/traefik.yml
+          git diff -- config/traefik/traefik.yml
+
+          # Existing DNS credentials, which setup.sh --yes must keep, plus the
+          # no-op command the exec provider runs instead of a DNS API call
+          (
+            umask 077
+            cat > "$DEPLOY_DIR/traefik.env" <<'ENV'
+          CF_DNS_API_TOKEN=ci-placeholder-token
+          EXEC_PATH=/bin/true
+          ENV
+          )
+
       # stdin is /dev/null so any prompt that --yes misses fails the run
       - name: Run setup.sh
-        run: ./setup.sh --domain "$SERVER_IP" --working-folder "$HOME" --yes < /dev/null
+        run: ./setup.sh $SETUP_ARGS < /dev/null
+
+      # Pebble creates a new issuing root at startup; checks verify against it
+      - name: Trust Pebble's issuing root (HTTPS)
+        if: matrix.mode == 'https'
+        run: |
+          curl -fsS --cacert "$DEPLOY_DIR/traefik-config/letsencrypt/pebble-minica.pem" \
+            https://localhost:15000/roots/0 > "$RUNNER_TEMP/pebble-root.pem"
+          echo "CA_FILE=$RUNNER_TEMP/pebble-root.pem" >> "$GITHUB_ENV"
 
       - name: Check the stack
         run: bash "$E2E/check-stack.sh"
@@ -66,7 +148,7 @@ jobs:
           grep -v '^#' "$DEPLOY_DIR/.secrets" > "$RUNNER_TEMP/secrets.before"
           sha256sum "$DEPLOY_DIR/ansible-ssh/ansible_rsa.pub" > "$RUNNER_TEMP/key.before"
 
-          ./setup.sh --domain "$SERVER_IP" --working-folder "$HOME" --yes < /dev/null
+          ./setup.sh $SETUP_ARGS < /dev/null
 
           grep -v '^#' "$DEPLOY_DIR/.secrets" | diff -u "$RUNNER_TEMP/secrets.before" - \
             || { echo "::error::Re-running setup.sh changed the generated secrets"; exit 1; }
@@ -102,12 +184,13 @@ jobs:
           sudo sed -E 's/^(\s*jwt_secret:).*/\1 "***"/' \
             "$DEPLOY_DIR/data/galvanize/config.yaml" > "$diag/galvanize-config.redacted.yaml" 2>/dev/null || true
           sudo journalctl -u ssh --no-pager -n 200 > "$diag/sshd.log" 2>&1 || true
+          [[ "$MODE" == https ]] && { docker logs pebble > "$diag/pebble.log" 2>&1 || true; }
           sudo chown -R "$USER" "$diag"
 
       - name: Upload diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: setup-e2e-diagnostics
+          name: setup-e2e-diagnostics-${{ matrix.mode }}
           path: ${{ runner.temp }}/diagnostics
           if-no-files-found: ignore

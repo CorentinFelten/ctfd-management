@@ -59,10 +59,9 @@ trap 'rm -f "$body_file"' EXIT
 
 # api METHOD PATH TOKEN [JSON] — prints the HTTP status, body in $body_file
 api() {
-    local -a args=(-s -o "$body_file" -w '%{http_code}' -X "$1"
-        -H "Host: ${instancer_domain}" -H "Authorization: Bearer $3")
+    local -a args=(-o "$body_file" -w '%{http_code}' -X "$1" -H "Authorization: Bearer $3")
     [[ -n "${4:-}" ]] && args+=(-H "Content-Type: application/json" -d "$4")
-    curl "${args[@]}" "http://${SERVER_IP}$2"
+    fetch "${SCHEME}://${instancer_domain}$2" "${args[@]}"
 }
 
 request="$(jq -cn --arg c "$category" --arg n "$challenge" '{category: $c, challenge_name: $n}')"
@@ -107,11 +106,11 @@ pass "Deployment is running: $connection_info"
 section "Instance"
 
 instance_host="$(sed -E 's|^https?://([^/:]+).*|\1|' <<< "$connection_info")"
-[[ "$instance_host" == *".${SERVER_IP//:/-}.sslip.io" ]] \
+[[ "$instance_host" == *".${INSTANCER_HOST}" ]] \
     || fail "Unexpected connection info: $connection_info"
 
 instance_serves_nginx() {
-    curl -fsSk --resolve "${instance_host}:443:${SERVER_IP}" "https://${instance_host}/" 2>/dev/null \
+    fetch "https://${instance_host}/" -f 2>/dev/null \
         | grep -q "Welcome to nginx"
 }
 wait_for "Traefik to route https://${instance_host}/" 60 instance_serves_nginx
