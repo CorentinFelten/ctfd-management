@@ -68,6 +68,10 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq openssh-server
           sudo systemctl enable --now ssh
+          # setup.sh runs apt-get upgrade, which also upgrades the runner's
+          # firefox package: it installs a snap and fails whenever the Snap
+          # store does not answer. It has nothing to do with setup.sh.
+          sudo apt-mark hold firefox >/dev/null
           server_ip="$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
           [[ -n "$server_ip" ]] || { echo "::error::Could not determine the runner's IP address"; exit 1; }
 
