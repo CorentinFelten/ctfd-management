@@ -1,6 +1,7 @@
 #!/bin/bash
 # CTFd Essential Backup Script
-# Backs up MariaDB database and CTFd uploads (everything needed for complete restoration)
+# Backs up MariaDB database and CTFd uploads (everything needed for complete restoration),
+# and optionally uploads the archive to an off-site bucket (setup.sh --backup-remote)
 #
 # Designed to run via cron. Uses flock to prevent concurrent executions.
 
@@ -172,5 +173,38 @@ fi
 
 REMAINING_COUNT=$(find "${BACKUP_BASE_DIR}" -maxdepth 1 -name "ctfd_backup_*.tar.gz" -type f | wc -l)
 log_message "Retained ${REMAINING_COUNT} backup(s)"
+
+# ---------- Upload to the off-site bucket ----------
+# Configured by setup.sh --backup-remote (rclone: S3 and S3-compatible, GCS,
+# Azure Blob, B2, SFTP...). The local archive is kept whatever happens; a
+# failed upload makes the run fail, so it shows in the cron log.
+BACKUP_REMOTE="$(read_env_value "BACKUP_REMOTE")"
+if [[ -n "${BACKUP_REMOTE}" ]]; then
+    ARCHIVE="${BACKUP_BASE_DIR}/ctfd_backup_${TIMESTAMP}.tar.gz"
+    RCLONE=(rclone --retries 3 --low-level-retries 10)
+    [[ -f "${SCRIPT_DIR}/rclone.conf" ]] && RCLONE+=(--config "${SCRIPT_DIR}/rclone.conf")
+
+    log_message "Uploading $(basename "${ARCHIVE}") to ${BACKUP_REMOTE}..."
+    if ! command -v rclone >/dev/null 2>&1; then
+        log_message "ERROR: rclone is not installed; re-run setup.sh with --backup-remote"
+        exit 1
+    fi
+    if ! "${RCLONE[@]}" copy "${ARCHIVE}" "${BACKUP_REMOTE}" >> "${LOG_FILE}" 2>&1; then
+        log_message "ERROR: Upload to ${BACKUP_REMOTE} failed (the local backup is kept)"
+        exit 1
+    fi
+    log_message "SUCCESS: Uploaded to ${BACKUP_REMOTE}"
+
+    RETENTION_DAYS="$(read_env_value "BACKUP_REMOTE_RETENTION_DAYS")"
+    if [[ "${RETENTION_DAYS}" =~ ^[0-9]+$ && "${RETENTION_DAYS}" -gt 0 ]]; then
+        if "${RCLONE[@]}" delete "${BACKUP_REMOTE}" --max-depth 1 \
+                --include "ctfd_backup_*.tar.gz" --min-age "${RETENTION_DAYS}d" >> "${LOG_FILE}" 2>&1; then
+            log_message "Deleted uploaded backups older than ${RETENTION_DAYS} days"
+        else
+            log_message "WARNING: Could not delete uploaded backups older than ${RETENTION_DAYS} days"
+        fi
+    fi
+fi
+
 log_message "========== Backup Complete =========="
 exit 0

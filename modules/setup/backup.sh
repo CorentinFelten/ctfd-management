@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# modules/setup/backup.sh — Make backup scripts executable and install cron job.
-# Requires: lib/common.sh
+# modules/setup/backup.sh — Deploy the backup scripts, configure the off-site
+# bucket upload, and install the cron job.
+# Requires: lib/common.sh, lib/env.sh
 
 [[ -n "${_SETUP_BACKUP_LOADED:-}" ]] && return 0
 readonly _SETUP_BACKUP_LOADED=1
@@ -30,6 +31,83 @@ setup_backup_script() {
     chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$deploy_backup_dir"
 
     log_success "Backup scripts deployed to: $deploy_backup_dir/"
+}
+
+# ── Off-site upload ─────────────────────────────────────────────────────────
+#
+# backup_db.sh uploads each archive with rclone, which speaks to most storage
+# providers (S3 and S3-compatible, Google Cloud Storage, Azure Blob, B2,
+# SFTP...). Settings live in .env (BACKUP_REMOTE, BACKUP_REMOTE_RETENTION_DAYS)
+# and the remote's definition in deploy/backup/rclone.conf (chmod 600, owned
+# by the user the cron job runs as). They are kept on re-runs until changed
+# with --backup-remote / --backup-rclone-config or turned off with
+# --no-backup-remote.
+
+# _as_backup_user CMD... — runs CMD as the user the backup cron job runs as
+_as_backup_user() {
+    local user="${SUDO_USER:-$USER}"
+    if [[ "$user" == root || "$(id -un)" == "$user" ]]; then
+        "$@"
+    else
+        sudo -u "$user" -H "$@"
+    fi
+}
+
+setup_backup_remote() {
+    local deploy_dir="${CONFIG[DEPLOY_DIR]}" user="${SUDO_USER:-$USER}"
+    local env_file="$deploy_dir/.env" conf="$deploy_dir/backup/rclone.conf"
+
+    if [[ "${CONFIG[NO_BACKUP_REMOTE]:-}" == "true" ]]; then
+        setup_env_keys BACKUP_REMOTE ""
+        log_info "Off-site backup upload disabled"
+        return 0
+    fi
+
+    if [[ -n "${CONFIG[BACKUP_RCLONE_CONFIG]:-}" ]]; then
+        install -m 600 -o "$user" -g "$user" "${CONFIG[BACKUP_RCLONE_CONFIG]}" "$conf"
+        log_info "rclone config installed: $conf"
+    fi
+
+    local remote retention
+    remote="${CONFIG[BACKUP_REMOTE]:-$(env_file_value "$env_file" BACKUP_REMOTE)}"
+    if [[ -z "$remote" ]]; then
+        log_debug "No off-site backup remote configured"
+        return 0
+    fi
+    retention="${CONFIG[BACKUP_REMOTE_RETENTION]:-$(env_file_value "$env_file" BACKUP_REMOTE_RETENTION_DAYS)}"
+    retention="${retention:-30}"
+
+    # A named remote must be defined in the config; an rclone connection
+    # string (":backend,option=value:path") is self-contained
+    if [[ "$remote" != :* && ! -f "$conf" ]]; then
+        error_exit "The backup remote '${remote%%:*}' is not defined: pass --backup-rclone-config FILE (made with 'rclone config'),
+  or use an rclone connection string, e.g. --backup-remote ':s3,provider=AWS,env_auth=true:my-bucket/ctfd'"
+    fi
+
+    if ! command -v rclone >/dev/null 2>&1; then
+        log_info "Installing rclone..."
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq rclone >/dev/null \
+            || error_exit "Could not install rclone"
+    fi
+
+    # Check access now, as the cron user, rather than at the first backup.
+    # mkdir creates the bucket/folder if needed (a no-op when it exists).
+    local -a rclone_cmd=(rclone)
+    [[ -f "$conf" ]] && rclone_cmd+=(--config "$conf")
+    log_info "Checking access to $remote..."
+    local output
+    if ! output="$(_as_backup_user "${rclone_cmd[@]}" mkdir "$remote" 2>&1 \
+            && _as_backup_user "${rclone_cmd[@]}" lsf --max-depth 1 "$remote" 2>&1 >/dev/null)"; then
+        error_exit "Cannot write to the backup remote $remote:
+$output"
+    fi
+
+    setup_env_keys BACKUP_REMOTE "$remote" BACKUP_REMOTE_RETENTION_DAYS "$retention"
+    if (( retention > 0 )); then
+        log_success "Backups will be uploaded to $remote (kept there for $retention days)"
+    else
+        log_success "Backups will be uploaded to $remote (kept there indefinitely)"
+    fi
 }
 
 setup_backup_cron() {

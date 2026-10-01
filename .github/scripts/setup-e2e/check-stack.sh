@@ -244,12 +244,40 @@ sudo crontab -u "$USER" -l | grep -F "$backup_script" >/dev/null \
     || fail "No backup cron job for $USER"
 pass "Backup cron job is installed for $USER"
 
+# Off-site upload (setup.sh --backup-remote): EXPECT_BACKUP_REMOTE is the
+# remote, and with CHECK_REMOTE_RETENTION=true an archive dated 2001 is
+# planted there first and must be deleted by the retention cleanup
+remote="${EXPECT_BACKUP_REMOTE:-}"
+old_archive="ctfd_backup_20010101_000000.tar.gz"
+rclone_cmd=(rclone)
+if [[ -n "$remote" ]]; then
+    expect_env BACKUP_REMOTE "$remote"
+    expect_env BACKUP_REMOTE_RETENTION_DAYS 30
+    [[ -f "$DEPLOY_DIR/backup/rclone.conf" ]] && rclone_cmd+=(--config "$DEPLOY_DIR/backup/rclone.conf")
+    if [[ "${CHECK_REMOTE_RETENTION:-}" == true ]]; then
+        "${rclone_cmd[@]}" touch --timestamp 2001-01-01T00:00:00 "${remote%/}/$old_archive" \
+            || fail "Could not plant an old archive on $remote"
+    fi
+fi
+
 DEPLOY_DIR="$DEPLOY_DIR" "$backup_script" >/dev/null \
-    || fail "backup_db.sh failed"
+    || fail "backup_db.sh failed (see $(dirname "$DEPLOY_DIR")/backups/backup.log)"
 latest="$(dirname "$DEPLOY_DIR")/backups/latest_backup.tar.gz"
 tar -tzf "$latest" | grep '/database.sql$' >/dev/null \
     || fail "$latest has no database dump"
 pass "backup_db.sh produced $(readlink -f "$latest")"
+
+if [[ -n "$remote" ]]; then
+    uploaded="$("${rclone_cmd[@]}" lsf --files-only "$remote")" || fail "Could not list $remote"
+    archive="$(basename "$(readlink -f "$latest")")"
+    grep -Fx "$archive" <<< "$uploaded" >/dev/null || fail "$archive was not uploaded to $remote: $uploaded"
+    pass "The backup was uploaded to $remote"
+    if [[ "${CHECK_REMOTE_RETENTION:-}" == true ]]; then
+        ! grep -Fx "$old_archive" <<< "$uploaded" >/dev/null \
+            || fail "The archive dated 2001 is still on $remote (retention: 30 days)"
+        pass "Uploaded backups older than the retention were deleted"
+    fi
+fi
 
 echo
 echo "All stack checks passed."
