@@ -512,6 +512,10 @@ Tous les secrets sont écrits dans `<deploy-dir>/.secrets` (chmod 600) et dans `
 
 Les identifiants du fournisseur DNS (pour les certificats TLS wildcard) sont écrits dans `<deploy-dir>/traefik.env` (chmod 600). C'est le seul fichier d'environnement transmis au conteneur Traefik : Traefik ne voit donc jamais les mots de passe de la base de données, la `SECRET_KEY` de CTFd ni le secret JWT de Zync. Les déploiements antérieurs à ce changement conservaient leurs identifiants DNS dans `.env` : relancer `setup.sh` les copie dans `traefik.env`, après quoi ils peuvent être retirés de `.env`.
 
+**Comment le setup écrit la configuration.** `deploy/.env` est la source des réglages du déploiement : le setup calcule d'abord toutes les valeurs (à partir des options, du `.env` et du `.secrets` existants), puis les écrit dans `.env` en une seule passe. Les clés qu'il ne gère pas, comme celles que vous ajoutez à la main, sont conservées. Docker Compose lit tout le reste directement dans `.env`, `docker-compose.yml` n'est donc jamais modifié. Les deux fichiers YAML générés, la configuration Galvanize et la configuration statique de Traefik, sont chacun remplis par un seul appel à `yq` à partir des mêmes valeurs. Dans `config/traefik/traefik.yml`, le setup ne remplace que les marqueurs `__BASE_DOMAIN__`, `__ACME_EMAIL__` et `__DNS_PROVIDER__` : les autres valeurs que vous modifiez dans ce modèle (par exemple `caServer`, pour utiliser le serveur de test de Let's Encrypt) sont conservées. `COMPOSE_PROJECT_NAME` est pris dans l'environnement, sinon dans `.env`, sinon `ctfd_infra`.
+
+Le port du tableau de bord Traefik (`9090`) est publié sur toutes les interfaces pour les déploiements HTTP uniquement, où le tableau de bord est activé, et seulement sur l'interface de loopback en HTTPS, où il est désactivé. C'est la valeur `TRAEFIK_DASHBOARD_BIND` de `.env`.
+
 > **Relancer le setup est sans risque** : si des secrets existent déjà dans `.env`, ils sont préservés. Seuls les secrets manquants sont générés, donc relancer `setup.sh` ne cassera pas les conteneurs existants.
 
 ## Intégration continue

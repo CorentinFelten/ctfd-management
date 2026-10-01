@@ -133,13 +133,6 @@ invoking_user_home() {
     printf '%s' "${home:-/home/$user}"
 }
 
-# sed_escape_replacement STRING — escape STRING for use as the replacement of
-# an `s|pattern|replacement|` sed command (backslash, the | delimiter and &,
-# which would otherwise insert the matched text).
-sed_escape_replacement() {
-    printf '%s' "$1" | sed -e 's/[\\|&]/\\&/g'
-}
-
 is_ip_address() {
     local input="$1"
 

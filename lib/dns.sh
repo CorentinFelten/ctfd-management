@@ -114,8 +114,8 @@ dns_setup_wizard() {
         done
     fi
 
+    # Written to .env with the other settings by install_ctfd
     CONFIG[DNS_PROVIDER]="$provider"
-    setup_env_key DNS_PROVIDER "$provider"
 
     local display_name docs_url env_vars_csv
     display_name="$(dns_provider_display_name "$provider")"
@@ -127,9 +127,9 @@ dns_setup_wizard() {
     log_info "Docs:     $docs_url"
     echo "" >&2
 
-    # Prompt for each required credential
+    # Prompt for each required credential, then write them all at once
     local IFS=',' var_name var_value
-    local -a required_vars
+    local -a required_vars credentials=()
     read -ra required_vars <<< "$env_vars_csv"
 
     for var_name in "${required_vars[@]}"; do
@@ -170,8 +170,9 @@ dns_setup_wizard() {
             done
         fi
 
-        setup_traefik_env_key "$var_name" "$var_value"
+        credentials+=("$var_name" "$var_value")
     done
+    setup_traefik_env_keys "${credentials[@]}"
 
     echo "" >&2
     log_success "DNS provider credentials configured for $display_name"

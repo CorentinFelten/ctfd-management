@@ -139,10 +139,13 @@ case "$INSTANCER" in
         expect_env COMPOSE_PROFILES  "" ;;
 esac
 if [[ "$SCHEME" == https ]]; then
-    expect_env TRAEFIK_STATIC_CONFIG ./traefik-config/traefik.yml
+    expect_env TRAEFIK_STATIC_CONFIG  ./traefik-config/traefik.yml
+    expect_env TRAEFIK_DASHBOARD_BIND 127.0.0.1:9090
 else
-    expect_env TRAEFIK_STATIC_CONFIG ./traefik-config/traefik-local.yml
+    expect_env TRAEFIK_STATIC_CONFIG  ./traefik-config/traefik-local.yml
+    expect_env TRAEFIK_DASHBOARD_BIND 9090
 fi
+expect_env DATA_DIR ./data
 pass ".env has the expected ${SCHEME} settings"
 
 for f in .secrets traefik.env; do
@@ -166,9 +169,6 @@ if [[ "$SCHEME" == https ]]; then
     [[ "$(sudo yq -r '.certificatesResolvers.letsencrypt.acme.email' "$traefik_cfg")" == "$(env_value ACME_EMAIL)" ]] \
         || fail "traefik.yml has the wrong ACME email"
     pass "traefik.yml is patched with the domain and ACME email"
-
-    ! grep -q '9090' "$DEPLOY_DIR/docker-compose.yml" || fail "docker-compose.yml still publishes the dashboard port"
-    pass "docker-compose.yml does not publish the dashboard port"
 fi
 
 if [[ "$INSTANCER" == local ]]; then

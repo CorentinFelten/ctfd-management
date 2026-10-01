@@ -40,6 +40,25 @@ _prune_config_backups() {
     done
 }
 
+# _render_traefik_configs DIR NETWORK DOMAIN ACME_EMAIL DNS_PROVIDER
+#   Sets the Docker provider network in both static configs, and fills the
+#   __BASE_DOMAIN__, __ACME_EMAIL__ and __DNS_PROVIDER__ placeholders of the
+#   Let's Encrypt one, in one yq pass per file. Values go through the
+#   environment (strenv), so they are never parsed as yq. A template value
+#   that is not a placeholder is left as it is.
+_render_traefik_configs() {
+    local dir="$1"
+    T_NETWORK="$2" yq -i '.providers.docker.network = strenv(T_NETWORK)' "$dir/traefik-local.yml"
+    T_NETWORK="$2" T_DOMAIN="$3" T_EMAIL="$4" T_PROVIDER="$5" yq -i '
+        .providers.docker.network = strenv(T_NETWORK) |
+        (.. | select(tag == "!!str")) |= (
+            sub("__BASE_DOMAIN__"; strenv(T_DOMAIN)) |
+            sub("__ACME_EMAIL__"; strenv(T_EMAIL)) |
+            sub("__DNS_PROVIDER__"; strenv(T_PROVIDER))
+        )
+    ' "$dir/traefik.yml"
+}
+
 install_ctfd() {
     local working_dir="${CONFIG[WORKING_DIR]}"
     local deploy_dir="${CONFIG[DEPLOY_DIR]}"
@@ -84,15 +103,14 @@ install_ctfd() {
     log_success "Config templates copied to deploy dir"
 
     local compose_file="$deploy_dir/docker-compose.yml"
+    local env_file="$deploy_dir/.env"
 
-    setup_env_key COMPOSE_PROJECT_NAME "${COMPOSE_PROJECT_NAME:-ctfd_infra}"
-
-    local compose_project_name=""
-    compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${deploy_dir}/.env" \
-        | head -n1 | cut -d= -f2- | tr -d "'\"\r" || true)"
+    # COMPOSE_PROJECT_NAME from the environment, else .env, else the default
+    local compose_project_name="${COMPOSE_PROJECT_NAME:-$(env_file_value "$env_file" COMPOSE_PROJECT_NAME)}"
     compose_project_name="${compose_project_name:-ctfd_infra}"
     # Traefik's default Docker network: the one Galvanize attaches challenges to
     local challenge_network="${compose_project_name}_challenges"
+    CONFIG[CHALLENGE_NETWORK]="$challenge_network"
 
     local jwt_secret_key
     jwt_secret_key="$(_existing_secret "$deploy_dir" ZYNC_JWT_SECRET JWT_SECRET_KEY)"
@@ -158,17 +176,10 @@ install_ctfd() {
         [[ -z "$db_root_password" ]]  && db_root_password="$(generate_password 16)"
     fi
 
-    setup_env_key SECRET_KEY            "$secret_key"
-    setup_env_key MARIADB_PASSWORD      "$db_password"
-    setup_env_key MARIADB_ROOT_PASSWORD "$db_root_password"
-    setup_env_key BASE_DOMAIN           "${CONFIG[DOMAIN]}"
-
-    # ── Build full URLs with scheme ──
+    # ── Derived settings ──
     local scheme="https"
     [[ "${CONFIG[NO_HTTPS]:-}" == "true" ]] && scheme="http"
     local ctfd_full_url="${scheme}://${CONFIG[DOMAIN]}"
-
-    setup_env_key CTFD_URL              "$ctfd_full_url"
 
     # Instancer URL: use --instancer-url if provided, otherwise the local instancer,
     # published by Traefik on its own subdomain. Zync calls it from players'
@@ -178,17 +189,45 @@ install_ctfd() {
         # sslip.io wildcard DNS, same scheme Galvanize uses for challenge subdomains
         instancer_domain="instancer.${CONFIG[DOMAIN]//:/-}.sslip.io"
     fi
-    setup_env_key INSTANCER_DOMAIN      "$instancer_domain"
     local instancer_url="${CONFIG[INSTANCER_URL]:-${scheme}://${instancer_domain}}"
-    setup_env_key ZYNC_DEPLOYER_URL     "$instancer_url"
-    setup_env_key ZYNC_JWT_SECRET       "$jwt_secret_key"
+
+    # Recorded for challenges.sh: challenge images only need to be built on
+    # this host when Galvanize deploys here (see is_local_instancer).
+    local use_local_instancer="false" instancer_mode="local"
+    if instancer_deployed_locally; then
+        use_local_instancer="true"
+    elif [[ -n "${CONFIG[INSTANCER_URL]:-}" ]]; then
+        instancer_mode="external"
+    else
+        instancer_mode="none"
+    fi
+
+    # Docker Compose reads COMPOSE_PROFILES from .env, so a manual
+    # `docker compose up -d`/`down`/`pull` in the deploy dir includes the
+    # instancer exactly when it runs locally. Rewritten on every run so it
+    # follows switches between local, external and no instancer.
+    local compose_profiles=""
+    [[ "$use_local_instancer" == "true" ]] && compose_profiles="instancer"
+
+    # Traefik static config, and where the dashboard port is published: the
+    # HTTP-only config serves the dashboard on :9090; the HTTPS one disables
+    # it, so its port is only bound to the loopback interface.
+    local traefik_static_config="./traefik-config/traefik.yml" dashboard_bind="127.0.0.1:9090"
+    if [[ "${CONFIG[NO_HTTPS]:-}" == "true" ]]; then
+        traefik_static_config="./traefik-config/traefik-local.yml"
+        dashboard_bind="9090"
+        log_info "HTTPS disabled — using the HTTP-only Traefik config"
+    else
+        log_info "HTTPS enabled — using the Let's Encrypt Traefik config"
+    fi
+
+    local dns_provider="${CONFIG[DNS_PROVIDER]:-cloudflare}"
+    local acme_email="${CONFIG[ACME_EMAIL]}"
 
     # ── Local instancer setup ──
     # Skipped when --instancer-url (external) or --no-instancer is given.
-    local use_local_instancer="false"
-    if instancer_deployed_locally; then
-        use_local_instancer="true"
-        local instancer_config_path="$deploy_dir/data/galvanize/config.yaml"
+    local instancer_config_path="$deploy_dir/data/galvanize/config.yaml"
+    if [[ "$use_local_instancer" == "true" ]]; then
         log_info "Setting up local instancer..."
 
         mkdir -p "$deploy_dir/data/galvanize"
@@ -202,109 +241,49 @@ install_ctfd() {
         cp "$SCRIPT_DIR"/config/galvanize/playbooks/*.yaml "$playbooks_dir/"
         log_success "Galvanize playbooks copied to: $playbooks_dir"
 
-        chown -R 1000:1000 "$deploy_dir/data/galvanize"
-
-        setup_env_key GALVANIZE_CONFIG_PATH "$instancer_config_path"
-
         setup_instancer
+        chown -R 1000:1000 "$deploy_dir/data/galvanize"
     fi
 
-    # Recorded for challenges.sh: challenge images only need to be built on
-    # this host when Galvanize deploys here (see is_local_instancer).
-    local instancer_mode="local"
-    if [[ -n "${CONFIG[INSTANCER_URL]:-}" ]]; then
-        instancer_mode="external"
-    elif [[ -n "${CONFIG[NO_INSTANCER]:-}" ]]; then
-        instancer_mode="none"
+    # ── .env, written once ──
+    local -a env_settings=(
+        COMPOSE_PROJECT_NAME  "$compose_project_name"
+        DATA_DIR              ./data
+        SECRET_KEY            "$secret_key"
+        MARIADB_PASSWORD      "$db_password"
+        MARIADB_ROOT_PASSWORD "$db_root_password"
+        BASE_DOMAIN           "${CONFIG[DOMAIN]}"
+        CTFD_URL              "$ctfd_full_url"
+        INSTANCER_DOMAIN      "$instancer_domain"
+        ZYNC_DEPLOYER_URL     "$instancer_url"
+        ZYNC_JWT_SECRET       "$jwt_secret_key"
+        INSTANCER_MODE        "$instancer_mode"
+        COMPOSE_PROFILES      "$compose_profiles"
+        TRAEFIK_STATIC_CONFIG "$traefik_static_config"
+        TRAEFIK_DASHBOARD_BIND "$dashboard_bind"
+        DNS_PROVIDER          "$dns_provider"
+        ACME_EMAIL            "$acme_email"
+    )
+    if [[ "$use_local_instancer" == "true" ]]; then
+        env_settings+=(
+            GALVANIZE_CONFIG_PATH "$instancer_config_path"
+            SSH_KEY_PATH          "${CONFIG[SSH_KEY_PATH]}"
+        )
     fi
-    setup_env_key INSTANCER_MODE "$instancer_mode"
+    setup_env_keys "${env_settings[@]}"
+    log_success "Settings written to $env_file"
 
-    # Docker Compose reads COMPOSE_PROFILES from .env, so a manual
-    # `docker compose up -d`/`down`/`pull` in the deploy dir includes the
-    # instancer exactly when it runs locally. Rewritten on every run so it
-    # follows switches between local, external and no instancer.
-    local compose_profiles=""
-    [[ "$use_local_instancer" == "true" ]] && compose_profiles="instancer"
-    setup_env_key COMPOSE_PROFILES "$compose_profiles"
-
-    # ── Traefik config selection + CA auto-switch ──
-    # Operate on DEPLOY_DIR copies — never touch tracked repo files
-    local traefik_cfg="$deploy_dir/traefik-config/traefik.yml"
-    local traefik_local_cfg="$deploy_dir/traefik-config/traefik-local.yml"
-    local staging_ca="https://acme-staging-v02.api.letsencrypt.org/directory"
-    local production_ca="https://acme-v02.api.letsencrypt.org/directory"
-
-    if [[ "${CONFIG[NO_HTTPS]:-}" == "true" ]]; then
-        log_info "HTTPS disabled — using local Traefik config (HTTP only)"
-        setup_env_key TRAEFIK_STATIC_CONFIG "./traefik-config/traefik-local.yml"
-
-        # Local deployment: switch to staging CA to avoid burning Let's Encrypt rate limits
-        if ! grep -qE "^[[:space:]]*caServer:.*acme-staging-v02" "$traefik_cfg" 2>/dev/null; then
-            log_info "Switching Traefik to Let's Encrypt staging CA for local deployment..."
-            if grep -qE "^[[:space:]]*caServer:" "$traefik_cfg" 2>/dev/null; then
-                sed -i "s|caServer:.*|caServer: \"${staging_ca}\"|" "$traefik_cfg"
-            else
-                sed -i "/storage:.*acme\.json/a\\      caServer: \"${staging_ca}\"" "$traefik_cfg"
-            fi
-            log_success "caServer set to staging: $staging_ca"
-        else
-            log_success "TLS CA verified: staging Let's Encrypt endpoint confirmed (local deployment)"
-        fi
-    else
-        log_info "HTTPS enabled — using production Traefik config"
-        setup_env_key TRAEFIK_STATIC_CONFIG "./traefik-config/traefik.yml"
-
-        # Production deployment: ensure production CA is set
-        if grep -qE "^[[:space:]]*caServer:.*acme-staging-v02" "$traefik_cfg" 2>/dev/null; then
-            log_warning "Staging CA detected — switching to production automatically..."
-            sed -i "s|caServer:.*acme-staging-v02\.api\.letsencrypt\.org.*|caServer: \"${production_ca}\"|" "$traefik_cfg"
-            log_success "caServer updated to production: $production_ca"
-
-        elif ! grep -qE "^[[:space:]]*caServer:" "$traefik_cfg" 2>/dev/null; then
-            log_info "caServer not set — adding production CA explicitly..."
-            sed -i "/storage:.*acme\.json/a\\      caServer: \"${production_ca}\"" "$traefik_cfg"
-            log_success "caServer set to production: $production_ca"
-        else
-            log_success "TLS CA verified: production Let's Encrypt endpoint confirmed"
-        fi
-
-        # Production: remove dashboard port (dashboard is disabled in production traefik.yml)
-        sed -i '/TRAEFIK_DASHBOARD_PORT.*9090/d' "$compose_file"
-    fi
-
+    # ── Traefik ──
     mkdir -p "$deploy_dir/traefik-config/letsencrypt"
-
     # Traefik's env_file must exist even when no DNS credentials were set
     ensure_traefik_env_file
-
-    # ── Patch Traefik static configs with runtime values ──
-    log_info "Setting Traefik Docker provider network to: $challenge_network"
-    local traefik_file
-    for traefik_file in "$traefik_cfg" "$traefik_local_cfg"; do
-        if [[ -f "$traefik_file" ]]; then
-            # Match any value (the files hold a single `network:` key) so that
-            # configs from older deployments pointing at *_proxy are fixed too
-            sed -i "s|^\([[:space:]]*\)network:.*|\1network: ${challenge_network}|" "$traefik_file"
-        fi
-    done
-    log_success "Traefik network configuration updated"
-
-    # 2. Domain, DNS provider, and ACME email
-    local domain="${CONFIG[DOMAIN]}"
-    log_info "Patching Traefik production config with domain: $domain"
-    sed -i "s|__BASE_DOMAIN__|$(sed_escape_replacement "$domain")|g" "$traefik_cfg"
-
-    local dns_provider="${CONFIG[DNS_PROVIDER]:-cloudflare}"
-    log_info "Setting ACME DNS-01 challenge provider to: $dns_provider"
-    sed -i "s|__DNS_PROVIDER__|$(sed_escape_replacement "$dns_provider")|g" "$traefik_cfg"
-    setup_env_key DNS_PROVIDER "$dns_provider"
-
-    local acme_email="${CONFIG[ACME_EMAIL]}"
-    log_info "Setting ACME email to: $acme_email"
-    sed -i "s|__ACME_EMAIL__|$(sed_escape_replacement "$acme_email")|g" "$traefik_cfg"
-    setup_env_key ACME_EMAIL "$acme_email"
-
-    log_success "Traefik wildcard TLS configuration complete (domain: $domain, provider: $dns_provider)"
+    _render_traefik_configs "$deploy_dir/traefik-config" "$challenge_network" \
+        "${CONFIG[DOMAIN]}" "$acme_email" "$dns_provider"
+    if [[ "${CONFIG[NO_HTTPS]:-}" == "true" ]]; then
+        log_success "Traefik configured: HTTP only, challenge network $challenge_network"
+    else
+        log_success "Traefik configured: certificates for ${CONFIG[DOMAIN]} and *.${CONFIG[DOMAIN]} via $dns_provider, challenge network $challenge_network"
+    fi
 
     # ── Build and pull Docker images ──
     local -a compose_cmd=(docker compose -p "$compose_project_name" -f "$compose_file")
