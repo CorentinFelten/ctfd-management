@@ -47,7 +47,7 @@ if [[ "$SCHEME" == https ]]; then
         || fail "http://${DOMAIN}/ should redirect to HTTPS (got HTTP $code to '$location')"
     pass "Plain HTTP redirects to HTTPS"
 
-    fetch "https://${DOMAIN}/" -o /dev/null -D - | grep -qi '^strict-transport-security:' \
+    fetch "https://${DOMAIN}/" -o /dev/null -D - | grep -i '^strict-transport-security:' >/dev/null \
         || fail "CTFd responses have no Strict-Transport-Security header"
     pass "HSTS header is set"
 
@@ -61,7 +61,7 @@ fi
 
 section "Routing"
 
-fetch "${SCHEME}://${DOMAIN}/" -fL | grep -qi "ctfd" \
+fetch "${SCHEME}://${DOMAIN}/" -fL | grep -i "ctfd" >/dev/null \
     || fail "CTFd is not served at ${SCHEME}://${DOMAIN}/"
 pass "CTFd answers at ${SCHEME}://${DOMAIN}/"
 
@@ -175,14 +175,14 @@ pass "ansible-user can SSH to ${DOMAIN} with the generated key and use Docker"
 section "Backups"
 
 backup_script="$DEPLOY_DIR/backup/backup_db.sh"
-sudo crontab -u "$USER" -l | grep -qF "$backup_script" \
+sudo crontab -u "$USER" -l | grep -F "$backup_script" >/dev/null \
     || fail "No backup cron job for $USER"
 pass "Backup cron job is installed for $USER"
 
 DEPLOY_DIR="$DEPLOY_DIR" "$backup_script" >/dev/null \
     || fail "backup_db.sh failed"
 latest="$(dirname "$DEPLOY_DIR")/backups/latest_backup.tar.gz"
-tar -tzf "$latest" | grep -q '/database.sql$' \
+tar -tzf "$latest" | grep '/database.sql$' >/dev/null \
     || fail "$latest has no database dump"
 pass "backup_db.sh produced $(readlink -f "$latest")"
 

@@ -11,6 +11,10 @@
 set -euo pipefail
 
 # set -e exits silently; say which check died unexpectedly
+#
+# Pipelines must not end in `grep -q`: it exits at the first match, the
+# writer then dies of SIGPIPE, and pipefail fails the whole pipeline,
+# depending on timing. Use `grep ... >/dev/null`, which reads all input.
 trap 'echo "::error file=${BASH_SOURCE[0]},line=${LINENO}::Unexpected failure: ${BASH_COMMAND}" >&2' ERR
 
 : "${DEPLOY_DIR:?DEPLOY_DIR must be set}"
