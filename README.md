@@ -498,15 +498,18 @@ DNS provider credentials (for wildcard TLS certificates) are written to `<deploy
 
 ## Continuous Integration
 
-`.github/workflows/setup-e2e.yml` runs on every push (documentation-only changes excepted) and can be started manually from the Actions tab. On a fresh Ubuntu 24.04 runner it:
+`.github/workflows/setup-e2e.yml` runs on every push (documentation-only changes excepted) and can be started manually from the Actions tab. It runs `setup.sh` for real on fresh Ubuntu 24.04 runners, with the bundled Galvanize instancer, in two jobs:
 
-1. checks that `setup.sh` rejects a loopback `--domain`;
-2. runs `./setup.sh --domain <runner IP> --yes`, which is a no-HTTPS deployment with the bundled Galvanize instancer;
-3. checks the stack (`.github/scripts/setup-e2e/check-stack.sh`): container health, Traefik routing to CTFd and the instancer, the generated `.env`/Galvanize config, Ansible SSH access, the backup cron job and a backup run;
-4. deploys and terminates a challenge instance through the Galvanize API with a Zync-style JWT (`deploy-challenge.sh`), reaching it over HTTPS through Traefik;
-5. re-runs `setup.sh --yes`, checks that the secrets are unchanged, then repeats the checks and the deployment with the recreated SSH key.
+- **no HTTPS**: `./setup.sh --domain <runner IP> --yes`. This job also checks that a loopback `--domain` is rejected.
+- **HTTPS**: `./setup.sh --domain <runner-ip>.sslip.io --acme-email … --dns-provider cloudflare --yes`, against [Pebble](https://github.com/letsencrypt/pebble), Let's Encrypt's test ACME server, running on the runner. sslip.io resolves the domain and all its subdomains to the runner. For this job only, the CI points the checkout's Traefik template at Pebble and the DNS-01 challenge at lego's `exec` provider running a no-op (Pebble accepts every challenge), and pre-seeds `traefik.env` with a placeholder Cloudflare token that `--yes` must keep. A real DNS provider API and the real Let's Encrypt servers are not exercised.
 
-On failure, container logs and redacted configs are uploaded as the `setup-e2e-diagnostics` artifact. HTTPS mode (DNS-01 certificates) and Debian are not covered.
+Each job then:
+
+1. checks the stack (`.github/scripts/setup-e2e/check-stack.sh`): container health, Traefik routing to CTFd and the instancer, the generated `.env`/`traefik.env`/Galvanize config, data ownership, Ansible SSH access, the backup cron job and a backup run. In HTTPS mode it also checks that a wildcard certificate for the domain is issued and verifies against Pebble's root, that HTTP redirects to HTTPS, the HSTS header, and that the Traefik dashboard port is closed;
+2. deploys and terminates a challenge instance through the Galvanize API with a Zync-style JWT (`deploy-challenge.sh`), reaching it over HTTPS through Traefik (with certificate verification in HTTPS mode);
+3. re-runs `setup.sh --yes`, checks that the secrets are unchanged, then repeats the checks and the deployment with the recreated SSH key.
+
+On failure, container logs and redacted configs are uploaded as the `setup-e2e-diagnostics-<mode>` artifact. Debian is not covered.
 
 ## License
 
