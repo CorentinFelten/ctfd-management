@@ -32,6 +32,19 @@ on:
       - "**.md"
       - "LICENSE"
   workflow_dispatch:
+    # Manual runs can test a Galvanize version that is not published yet,
+    # e.g. a fork branch with a fix meant for 28Pollux28/galvanize: the
+    # Ubuntu jobs with a local instancer build it and deploy it with its own
+    # playbooks. Left empty, the published image is used as on every push.
+    inputs:
+      galvanize_repository:
+        description: "Galvanize repository to build and test (owner/repo, e.g. CorentinFelten/galvanize); empty: the published image"
+        required: false
+        default: ""
+      galvanize_ref:
+        description: "Branch, tag or commit of that repository"
+        required: false
+        default: ""
 
 concurrency:
   group: setup-e2e-${{ github.ref }}
@@ -240,6 +253,13 @@ jobs:
           ENV
           )
 
+      - name: Build the Galvanize under test (manual runs with galvanize_repository)
+        if: github.event_name == 'workflow_dispatch' && inputs.galvanize_repository != '' && matrix.instancer == 'local'
+        env:
+          GALVANIZE_REPOSITORY: ${{ inputs.galvanize_repository }}
+          GALVANIZE_REF: ${{ inputs.galvanize_ref }}
+        run: bash "$E2E/use-galvanize-ref.sh"
+
       # stdin is /dev/null so any prompt that --yes misses fails the run
       # sudo --preserve-env keeps the admin password from the environment
       - name: Run setup.sh
@@ -357,6 +377,10 @@ jobs:
       # DOMAIN, DEPLOY_DIR and SETUP_ARGS for the VM
       - name: Boot a Debian 13 VM
         run: bash "$E2E/vm-start.sh" debian/13
+
+      - name: Note the Galvanize version (manual runs with galvanize_repository)
+        if: github.event_name == 'workflow_dispatch' && inputs.galvanize_repository != ''
+        run: echo "::notice::The Debian 13 VM job tests the published Galvanize image, not ${{ inputs.galvanize_repository }}@${{ inputs.galvanize_ref }}"
 
       - name: Run setup.sh
         run: bash "$E2E/vm-run.sh" sudo --preserve-env=CTFD_ADMIN_PASSWORD ./setup.sh $SETUP_ARGS $ADMIN_ARGS

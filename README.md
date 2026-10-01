@@ -605,6 +605,8 @@ Each job then:
 
 On failure, container logs and redacted configs are uploaded as the `setup-e2e-diagnostics-<job>` artifact.
 
+**Testing an unreleased Galvanize.** A manual run (Actions tab → Setup end-to-end → Run workflow) can test a Galvanize version that is not published yet, such as a fork branch with a fix meant for upstream: set `galvanize_repository` (e.g. `CorentinFelten/galvanize`) and `galvanize_ref` (a branch, tag or commit). The Ubuntu jobs with a local instancer then build that version's image and deploy it with that version's own playbooks instead of the vendored ones, so the deployments exercise the code under test. setup.sh is unchanged: only the checkout's compose template and playbooks are pointed at it. From the command line: `gh workflow run setup-e2e.yml --ref <branch> -f galvanize_repository=CorentinFelten/galvanize -f galvanize_ref=<galvanize-branch>`.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
