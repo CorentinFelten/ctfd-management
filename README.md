@@ -58,6 +58,10 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 | `--remove-theme NAME`    | Remove an installed custom theme. Repeatable                                     | ❌ No    |
 | `--active-theme NAME`    | Make NAME CTFd's active theme                                                    | ❌ No    |
 | `--backup-schedule TYPE` | Database backup frequency (`daily` (default), `hourly`, `10min`)                 | ❌ No    |
+| `--backup-remote REMOTE:PATH` | Also upload every backup to a bucket, with rclone (see [Backups](#backups)) | ❌ No    |
+| `--backup-rclone-config FILE` | rclone config defining the remote                                   | ❌ No    |
+| `--backup-remote-retention DAYS` | Delete uploaded backups older than DAYS (default: 30, 0 keeps all) | ❌ No    |
+| `--no-backup-remote`     | Stop uploading backups                                                           | ❌ No    |
 | `--instancer-url URL`    | Use an external Galvanize instancer instead of deploying one locally             | ❌ No    |
 | `--no-instancer`         | Skip Galvanize setup entirely (deploy it separately later)                       | ❌ No    |
 | `--dns-provider NAME`    | DNS provider for wildcard TLS certs (default: `cloudflare`)                      | ❌ No    |
@@ -103,6 +107,9 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 # Backup every 10 minutes
 ./setup.sh --domain example.com --backup-schedule 10min
 
+# Also upload every backup to a bucket (any rclone remote, see Backups)
+./setup.sh --domain example.com --backup-remote offsite:ctfd-backups/prod --backup-rclone-config ./rclone.conf
+
 # Use an external Galvanize instancer
 ./setup.sh --domain example.com --instancer-url https://instancer.example.com
 
@@ -122,6 +129,42 @@ Themes are built into the CTFd image: they are kept in `<working-folder>/deploy/
 Installed themes appear in CTFd under **Admin Panel → Config → Themes**. `--active-theme NAME` selects one from setup (`core` switches back to the default theme). Until CTFd's first-run setup wizard has been completed, the wizard's own Theme field decides: setup warns about it, and the custom themes are listed there.
 
 Deployments made before this change mounted a single theme from `deploy/data/CTFd/themes/<THEME_NAME>`; the next setup run copies it into the image automatically.
+
+## Backups
+
+`setup.sh` installs a cron job (`--backup-schedule`, daily by default) that runs `deploy/backup/backup_db.sh`. Each run dumps the MariaDB database and archives CTFd's uploads into `<working-folder>/backups/ctfd_backup_<date>.tar.gz`, keeping the 5 most recent archives there. Restore one with `deploy/backup/restore_db.sh <archive>` (or `latest`).
+
+### Off-site copies in a bucket
+
+With `--backup-remote`, every archive is also uploaded to a bucket, right after it is created. The upload uses [rclone](https://rclone.org/), so any provider rclone supports works: AWS S3 and S3-compatible storage (Cloudflare R2, Backblaze B2, Wasabi, OVHcloud, Scaleway, MinIO…), Google Cloud Storage, Azure Blob Storage, SFTP and [many more](https://rclone.org/overview/). Setup installs rclone and checks that the bucket can be written to before finishing, so wrong credentials fail at setup time, not at the first backup.
+
+`--backup-remote` takes an rclone `REMOTE:PATH`. Define the remote once with `rclone config` (on any machine) and pass the resulting file with `--backup-rclone-config`:
+
+```bash
+# Cloudflare R2, Backblaze B2, Azure, GCS…: a remote named "offsite" in rclone.conf
+./setup.sh --domain example.com --acme-email admin@example.com \
+  --backup-remote offsite:ctfd-backups/prod --backup-rclone-config ./rclone.conf
+```
+
+Credentials that come from the server itself (an AWS instance role, GCP workload identity) need no config file: use an rclone connection string instead:
+
+```bash
+./setup.sh --domain example.com --acme-email admin@example.com \
+  --backup-remote ':s3,provider=AWS,env_auth=true,region=eu-west-3:ctfd-backups/prod'
+```
+
+- The config is stored in `deploy/backup/rclone.conf` (chmod 600, owned by the user the cron job runs as). The settings are kept on later setup runs; change them by passing the options again, or stop uploading with `--no-backup-remote`.
+- Uploaded archives older than 30 days are deleted after each upload. Change this with `--backup-remote-retention DAYS`, or use `0` to keep everything (for example to let the bucket's own lifecycle rules handle expiry).
+- A failed upload keeps the local archive and makes the backup run fail, with the details in `<working-folder>/backups/backup.log` and the cron log.
+- The archives hold the whole CTFd database, including flags and password hashes. To encrypt them before they leave the server, whatever the provider, point `--backup-remote` at an rclone [`crypt`](https://rclone.org/crypt/) remote that wraps the bucket.
+
+To restore from the bucket, for example on a new server after running setup there with the same `--backup-remote`:
+
+```bash
+rclone --config deploy/backup/rclone.conf lsf offsite:ctfd-backups/prod
+rclone --config deploy/backup/rclone.conf copy offsite:ctfd-backups/prod/ctfd_backup_<date>.tar.gz ~/backups/
+deploy/backup/restore_db.sh ~/backups/ctfd_backup_<date>.tar.gz
+```
 
 ## Galvanize Instancer Deployment
 
@@ -190,6 +233,7 @@ deploy/
 │       ├── playbooks/          # Ansible playbooks (from config/galvanize/playbooks/)
 │       ├── challenges/         # Challenge repositories indexed by Galvanize
 │       └── deployer.sqlite     # Galvanize deployment database
+├── backup/                     # Backup and restore scripts, rclone.conf (--backup-remote)
 └── cron_backup.log             # Backup cron job log
 ```
 

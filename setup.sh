@@ -31,6 +31,10 @@ declare -A CONFIG=(
     [DEPLOY_DIR]=""
     [ACTIVE_THEME]=""
     [BACKUP_SCHEDULE]="daily"
+    [BACKUP_REMOTE]=""
+    [BACKUP_RCLONE_CONFIG]=""
+    [BACKUP_REMOTE_RETENTION]=""
+    [NO_BACKUP_REMOTE]=""
     [JWT_SECRET_KEY]=""
     [DOCKER_ENV_FILE]="env.production"
     [DNS_PROVIDER]="cloudflare"
@@ -55,6 +59,18 @@ Options:
         --remove-theme NAME     Remove an installed custom theme (repeatable)
         --active-theme NAME     Make NAME CTFd's active theme
     -b, --backup-schedule TYPE  Set backup schedule: daily, hourly, or 10min (default: daily)
+        --backup-remote REMOTE:PATH
+                                Also upload every backup to a bucket, with rclone (S3 and
+                                S3-compatible, GCS, Azure Blob, B2, SFTP...). REMOTE is a
+                                remote defined in --backup-rclone-config, or an rclone
+                                connection string (:s3,provider=AWS,env_auth=true:bucket/ctfd)
+        --backup-rclone-config FILE
+                                rclone.conf defining the remote (from `rclone config`)
+        --backup-remote-retention DAYS
+                                Delete uploaded backups older than DAYS (default: 30,
+                                0 keeps them all, e.g. to use the bucket's lifecycle rules)
+        --no-backup-remote      Stop uploading backups
+                                (the remote settings are kept on re-runs until changed)
     -i, --instancer-url URL     Use an external Galvanize instancer (skips local setup)
         --no-instancer          Skip Galvanize setup entirely (deploy it separately later)
     -p, --dns-provider NAME     DNS provider for wildcard TLS certs (default: cloudflare)
@@ -90,6 +106,8 @@ Examples:
         --theme ./second-theme --active-theme theme
     $SCRIPT_NAME --domain example.com --acme-email admin@example.com
     $SCRIPT_NAME --domain example.com --backup-schedule hourly
+    $SCRIPT_NAME --domain example.com --backup-remote r2:ctfd-backups/prod \
+        --backup-rclone-config ./rclone.conf
     $SCRIPT_NAME --domain 192.168.1.100 --yes
 EOF
 }
@@ -121,6 +139,19 @@ parse_arguments() {
                     *) error_exit "Invalid backup schedule: $2. Must be: daily, hourly, or 10min" ;;
                 esac
                 shift 2 ;;
+            --backup-remote)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --backup-remote"
+                [[ "$2" == *:* ]] || error_exit "--backup-remote must be an rclone REMOTE:PATH, e.g. s3:my-bucket/ctfd"
+                CONFIG[BACKUP_REMOTE]="$2"; shift 2 ;;
+            --backup-rclone-config)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --backup-rclone-config"
+                [[ -f "$2" ]] || error_exit "rclone config not found: $2"
+                CONFIG[BACKUP_RCLONE_CONFIG]="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"; shift 2 ;;
+            --backup-remote-retention)
+                [[ "${2:-}" =~ ^[0-9]+$ ]] || error_exit "--backup-remote-retention needs a number of days (0 keeps everything)"
+                CONFIG[BACKUP_REMOTE_RETENTION]="$2"; shift 2 ;;
+            --no-backup-remote)
+                CONFIG[NO_BACKUP_REMOTE]="true"; shift ;;
             -i|--instancer-url)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --instancer-url"
                 CONFIG[INSTANCER_URL]="$2"; shift 2 ;;
@@ -145,6 +176,10 @@ parse_arguments() {
 
     [[ -n ${CONFIG[DOMAIN]:-} ]] \
         || error_exit "Error: --domain is mandatory and must be specified."
+
+    if [[ -n "${CONFIG[BACKUP_REMOTE]}" && -n "${CONFIG[NO_BACKUP_REMOTE]}" ]]; then
+        error_exit "--backup-remote and --no-backup-remote are mutually exclusive"
+    fi
 
     if [[ -n "${CONFIG[INSTANCER_URL]:-}" && -n "${CONFIG[NO_INSTANCER]:-}" ]]; then
         error_exit "--instancer-url and --no-instancer are mutually exclusive"
@@ -190,6 +225,7 @@ main() {
     install_ctfd
 
     setup_backup_script
+    setup_backup_remote
     setup_backup_cron
 
     log_success "CTFd server setup completed successfully!"
