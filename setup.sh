@@ -19,6 +19,7 @@ source "$SCRIPT_DIR/modules/setup/system.sh"
 source "$SCRIPT_DIR/modules/setup/docker.sh"
 source "$SCRIPT_DIR/modules/setup/directories.sh"
 source "$SCRIPT_DIR/modules/setup/theme.sh"
+source "$SCRIPT_DIR/modules/setup/ctfd_admin.sh"
 source "$SCRIPT_DIR/modules/setup/instancer.sh"
 source "$SCRIPT_DIR/modules/setup/ctfd.sh"
 source "$SCRIPT_DIR/modules/setup/backup.sh"
@@ -30,6 +31,12 @@ declare -A CONFIG=(
     [WORKING_DIR]="$(invoking_user_home)"
     [DEPLOY_DIR]=""
     [ACTIVE_THEME]=""
+    [ADMIN_NAME]=""
+    [ADMIN_EMAIL]=""
+    [USER_MODE]=""
+    [CTF_NAME]=""
+    [CTF_DESCRIPTION]=""
+    [TEAM_SIZE]=""
     [BACKUP_SCHEDULE]="daily"
     [BACKUP_REMOTE]=""
     [BACKUP_RCLONE_CONFIG]=""
@@ -51,6 +58,21 @@ Usage: $SCRIPT_NAME [OPTIONS]
 Options:
     -d, --domain URL          Set CTFd URL (mandatory)
                                 Note: IP addresses automatically enable --no-https
+
+  CTFd first-run setup (mandatory on a new deployment; CTFd's web setup
+  wizard is disabled, so the instance goes live already set up):
+        --admin-name NAME       First admin's user name
+        --admin-email EMAIL     First admin's email address
+        --user-mode MODE        teams or users (cannot be changed later
+                                without deleting every account)
+                                The admin password is asked for (hidden, twice) at the
+                                start of the run; with --yes it is read from the
+                                CTFD_ADMIN_PASSWORD environment variable instead.
+        --ctf-name NAME         Event name (default: "CTFd")
+        --ctf-description TEXT  Event description
+        --team-size N           Maximum team size (teams mode)
+
+  Other options:
     -w, --working-folder DIR    Set working directory (default: your home directory)
     -t, --theme SOURCE          Install a custom CTFd theme (repeatable). SOURCE is a
                                 local folder or a Git URL, optionally with #REF to
@@ -97,7 +119,8 @@ Directory structure:
     <working-folder>/deploy/cron_backup.log           Backup cron job log
 
 Examples:
-    $SCRIPT_NAME --domain example.com
+    $SCRIPT_NAME --domain example.com --acme-email admin@example.com \
+        --admin-name admin --admin-email admin@example.com --user-mode teams --ctf-name "PolyPwn"
     $SCRIPT_NAME --domain example.com --dns-provider cloudflare
     $SCRIPT_NAME --domain 192.168.1.100
     $SCRIPT_NAME --domain example.com --working-folder /opt/ctfd
@@ -169,6 +192,27 @@ parse_arguments() {
                 shift ;;
             -y|--yes)
                 _ASSUME_YES="true"; shift ;;
+            --admin-name)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --admin-name"
+                CONFIG[ADMIN_NAME]="$2"; shift 2 ;;
+            --admin-email)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --admin-email"
+                CONFIG[ADMIN_EMAIL]="$2"; shift 2 ;;
+            --user-mode)
+                case "${2:-}" in
+                    teams|users) CONFIG[USER_MODE]="$2" ;;
+                    *) error_exit "--user-mode must be teams or users" ;;
+                esac
+                shift 2 ;;
+            --ctf-name)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --ctf-name"
+                CONFIG[CTF_NAME]="$2"; shift 2 ;;
+            --ctf-description)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --ctf-description"
+                CONFIG[CTF_DESCRIPTION]="$2"; shift 2 ;;
+            --team-size)
+                [[ "${2:-}" =~ ^[1-9][0-9]*$ ]] || error_exit "--team-size needs a positive number"
+                CONFIG[TEAM_SIZE]="$2"; shift 2 ;;
             -h|--help) show_usage; exit 0 ;;
             *)      error_exit "Unknown parameter: $1" ;;
         esac
@@ -243,5 +287,8 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         exec sudo -- bash "$0" "$@"
     fi
     parse_arguments "$@"
+    # Before any change to the system: a new deployment needs its first
+    # admin, and the password is asked for now so the rest runs unattended
+    prepare_ctfd_admin
     main
 fi

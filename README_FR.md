@@ -38,11 +38,13 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 
 2. **Exécuter le script d'installation et suivre les instructions** :
    ```bash
-   ./setup.sh --domain <domaine.com>
+   ./setup.sh --domain <domaine.com> --acme-email <vous@exemple.com> \
+     --admin-name <admin> --admin-email <admin@exemple.com> --user-mode teams --ctf-name "<Nom de l'événement>"
    ```
+   Le script demande le mot de passe du premier administrateur au démarrage, puis s'exécute sans intervention. CTFd est mis en ligne déjà configuré (voir [Premier administrateur et configuration de CTFd](#premier-administrateur-et-configuration-de-ctfd)).
 
 3. **Accéder à l'URL du serveur configuré**
-   - Configurer l'événement CTF
+   - Se connecter avec le compte administrateur créé par le script
    - Naviguer vers le panneau de configuration administrateur : `Admin Panel` --> `Plugins` --> `Zync Config`
    - Vérifier l'URL de l'instancer Galvanize et le secret JWT (tous deux pré-remplis par le script d'installation, voir ci-dessous)
 
@@ -53,6 +55,12 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 | Option                   | Description                                                                               | Requis   |
 |--------------------------|-------------------------------------------------------------------------------------------|----------|
 | `--domain URL/IP`        | URL/domaine de votre serveur CTFd                                                         | ✅ Oui   |
+| `--admin-name NAME`      | Nom d'utilisateur du premier administrateur (le mot de passe est demandé pendant l'exécution) | ✅ Nouveau déploiement |
+| `--admin-email EMAIL`    | Adresse email du premier administrateur                                                   | ✅ Nouveau déploiement |
+| `--user-mode MODE`       | `teams` ou `users`                                                                        | ✅ Nouveau déploiement |
+| `--ctf-name NAME`        | Nom de l'événement (défaut : « CTFd »)                                                    | ❌ Non   |
+| `--ctf-description TEXT` | Description de l'événement                                                                | ❌ Non   |
+| `--team-size N`          | Taille maximale des équipes (mode teams)                                                  | ❌ Non   |
 | `--working-folder DIR`   | Répertoire de travail (défaut : votre répertoire personnel, `/root` en root)             | ❌ Non   |
 | `--theme SOURCE`         | Installer un thème personnalisé : dossier ou URL Git (`#ref` pour une branche/un tag). Répétable | ❌ Non   |
 | `--remove-theme NAME`    | Supprimer un thème personnalisé installé. Répétable                                       | ❌ Non   |
@@ -77,6 +85,8 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 > **Exécution sans surveillance (`--yes`)** : chaque question prend sa réponse par défaut. Lors d'une réexécution, la paire de clés SSH Ansible est donc recréée (le conteneur de l'instancer est recréé pour la prendre en compte). L'assistant DNS ne peut pas demander les identifiants : pour un déploiement HTTPS, ils doivent déjà se trouver dans `deploy/traefik.env`, ou être passés dans l'environnement root (`sudo CF_DNS_API_TOKEN=... ./setup.sh ... --yes`). Sans `--yes`, une question posée sans terminal (CI, cron) échoue avec un message indiquant `--yes`.
 
 ## Exemples d'installation
+
+Les options de première installation (`--admin-name`, `--admin-email`, `--user-mode`) sont nécessaires pour un nouveau déploiement et omises dans les exemples ci-dessous par souci de concision.
 
 ```bash
 # Installation basique avec domaine (inclut l'instancer Galvanize local par défaut)
@@ -120,13 +130,31 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 ./setup.sh --help
 ```
 
+## Premier administrateur et configuration de CTFd
+
+L'assistant de configuration web de CTFd est désactivé : Traefik ne route jamais `/setup`. À la place, `setup.sh` crée le premier compte administrateur et les réglages de l'événement en ligne de commande, dès le démarrage de CTFd : l'instance est donc mise en ligne déjà configurée. Personne ne peut la revendiquer depuis le navigateur entre-temps, ce que l'assistant public permettait tant que personne ne l'avait terminé.
+
+Pour un nouveau déploiement, ces options sont obligatoires. Le script s'arrête avant toute modification du système si l'une d'elles manque ou est invalide :
+
+- `--admin-name` et `--admin-email` : le nom d'utilisateur (qui ne peut pas être une adresse email) et l'adresse email du premier administrateur.
+- `--user-mode teams|users` : le mode de CTFd. CTFd exige lui-même ce choix, et le mode ne peut plus être changé ensuite sans supprimer tous les comptes.
+- Le mot de passe administrateur, demandé au début de l'exécution (masqué, saisi deux fois). Il n'apparaît jamais sur une ligne de commande et n'est jamais écrit sur le disque : il reste dans la mémoire du script et parvient à CTFd par l'entrée standard, CTFd n'en stockant que l'empreinte. Pour une exécution sans surveillance (`--yes`), placez-le dans la variable d'environnement `CTFD_ADMIN_PASSWORD` et conservez-la à travers `sudo` :
+  ```bash
+  read -rs CTFD_ADMIN_PASSWORD && export CTFD_ADMIN_PASSWORD
+  sudo --preserve-env=CTFD_ADMIN_PASSWORD ./setup.sh --domain exemple.com ... --yes
+  ```
+
+Facultatifs : `--ctf-name` (CTFd affiche « CTFd » sinon), `--ctf-description`, `--team-size` (mode teams), et `--active-theme`, appliqué lors de la configuration. Tous les autres réglages gardent les valeurs par défaut de CTFd (challenges visibles des utilisateurs connectés uniquement, inscription et classement publics, pas de vérification des emails) et se modifient dans le panneau d'administration.
+
+Une fois CTFd configuré, les exécutions suivantes du setup sautent cette étape : les options de première installation ne sont plus nécessaires, et sont ignorées si elles sont données. Bloquer `/setup` bloque aussi `/setup/integrations` (intégration MajorLeagueCyber), que ce setup n'utilise pas.
+
 ## Configuration du thème personnalisé
 
 `--theme` installe un thème personnalisé et peut être donné autant de fois que nécessaire. Chaque source est un dossier local ou une URL Git ; ajoutez `#REF` à une URL Git pour cloner une branche ou un tag (`https://github.com/user/theme.git#v2.0`). Le thème prend le nom du dossier ou du dépôt (`theme` ici) et doit contenir un dossier `templates/`. Les noms `core`, `core-deprecated` et `admin` sont les thèmes de CTFd et sont refusés.
 
 Les thèmes sont intégrés à l'image CTFd : ils sont conservés dans `<working-folder>/deploy/ctfd/themes/<nom>/`, et `Dockerfile.ctfd` copie ce dossier à côté des thèmes intégrés de CTFd. Ils restent donc installés lors des exécutions suivantes du setup, y compris sans `--theme` ; redonner un thème le met à jour, et `--remove-theme NOM` le supprime. Une modification directe d'un thème prend effet après reconstruction de l'image (`docker compose build ctfd && docker compose up -d` dans `deploy/`, ou une exécution du setup).
 
-Les thèmes installés apparaissent dans CTFd sous **Admin Panel → Config → Themes**. `--active-theme NOM` en sélectionne un depuis le setup (`core` revient au thème par défaut). Tant que l'assistant de première installation de CTFd n'a pas été terminé, c'est son propre champ Theme qui décide : le setup le signale, et les thèmes personnalisés y sont proposés.
+Les thèmes installés apparaissent dans CTFd sous **Admin Panel → Config → Themes**. `--active-theme NOM` en sélectionne un depuis le setup (`core` revient au thème par défaut). Pour un nouveau déploiement, il est appliqué lors de la configuration de CTFd : l'instance est mise en ligne avec ce thème.
 
 Les déploiements antérieurs à ce changement montaient un seul thème depuis `deploy/data/CTFd/themes/<THEME_NAME>` ; l'exécution suivante du setup le copie automatiquement dans l'image.
 

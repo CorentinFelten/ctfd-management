@@ -60,6 +60,11 @@ jobs:
       # Never contacted: setup.sh only hands it to CTFd
       EXTERNAL_INSTANCER_URL: https://instancer.ci-external.example.org
       PEBBLE_IMAGE: ghcr.io/letsencrypt/pebble:2.10.1
+      # First admin, created by setup.sh (CTFd's web setup is disabled). The
+      # password has spaces and URL-special characters to test its encoding.
+      CTFD_ADMIN_NAME: ci-admin
+      CTFD_ADMIN_PASSWORD: 'ci P@ss&w0rd=1+2 #"x"'
+      EXPECT_CTF_NAME: PolyPwn-CI
     steps:
       - uses: actions/checkout@v7
 
@@ -86,6 +91,17 @@ jobs:
             domain="$server_ip"
             setup_args="--domain $server_ip"
           fi
+
+          # First-run options, passed to the first run only: re-runs must
+          # work without them. Both user modes are covered.
+          if [[ "$INSTANCER" == none ]]; then
+            mode_args="--user-mode users"
+            echo "EXPECT_USER_MODE=users" >> "$GITHUB_ENV"
+          else
+            mode_args="--user-mode teams --team-size 4"
+            { echo "EXPECT_USER_MODE=teams"; echo "EXPECT_TEAM_SIZE=4"; } >> "$GITHUB_ENV"
+          fi
+          echo "ADMIN_ARGS=--admin-name $CTFD_ADMIN_NAME --admin-email admin@ci.example.org --ctf-name $EXPECT_CTF_NAME $mode_args" >> "$GITHUB_ENV"
 
           case "$INSTANCER" in
             none)     setup_args+=" --no-instancer" ;;
@@ -157,16 +173,28 @@ jobs:
             echo "CHECK_REMOTE_RETENTION=true"
           } >> "$GITHUB_ENV"
 
-      - name: setup.sh rejects a loopback --domain
+      # Each must fail before setup.sh changes anything on the system
+      - name: setup.sh rejects invalid first runs
         if: matrix.id == 'http'
         run: |
-          if output="$(./setup.sh --domain 127.0.0.1 --yes 2>&1)"; then
-            echo "$output"
-            echo "::error::setup.sh accepted --domain 127.0.0.1"
-            exit 1
-          fi
-          echo "$output"
-          grep "loopback address" <<< "$output" >/dev/null
+          expect_failure() {
+            local message="$1"; shift
+            if output="$("$@" < /dev/null 2>&1)"; then
+              echo "$output"; echo "::error::Accepted: $*"; exit 1
+            fi
+            grep -F -- "$message" <<< "$output" >/dev/null \
+              || { echo "$output"; echo "::error::Expected '$message' from: $*"; exit 1; }
+            echo "ok  refused ($message): $*"
+          }
+          admin="--admin-name $CTFD_ADMIN_NAME --admin-email admin@ci.example.org --user-mode teams"
+          expect_failure "loopback address" ./setup.sh --domain 127.0.0.1 $admin --yes
+          expect_failure "missing --admin-name --admin-email --user-mode" ./setup.sh --domain "$SERVER_IP" --yes
+          expect_failure "missing --user-mode" ./setup.sh --domain "$SERVER_IP" --admin-name a --admin-email a@ci.example.org --yes
+          expect_failure "not a valid email" ./setup.sh --domain "$SERVER_IP" --admin-name a --admin-email nope --user-mode teams --yes
+          expect_failure "cannot be an email address" ./setup.sh --domain "$SERVER_IP" --admin-name a@ci.example.org --admin-email a@ci.example.org --user-mode teams --yes
+          # CTFD_ADMIN_PASSWORD is not kept through setup.sh's own sudo
+          expect_failure "set CTFD_ADMIN_PASSWORD" ./setup.sh --domain "$SERVER_IP" $admin --yes
+          [[ ! -e "$DEPLOY_DIR" ]] || { echo "::error::A refused run created $DEPLOY_DIR"; exit 1; }
 
       - name: Start Pebble (HTTPS)
         if: matrix.tls == 'https'
@@ -213,8 +241,9 @@ jobs:
           )
 
       # stdin is /dev/null so any prompt that --yes misses fails the run
+      # sudo --preserve-env keeps the admin password from the environment
       - name: Run setup.sh
-        run: ./setup.sh $SETUP_ARGS $THEME_ARGS $BACKUP_ARGS < /dev/null
+        run: sudo --preserve-env=CTFD_ADMIN_PASSWORD ./setup.sh $SETUP_ARGS $ADMIN_ARGS $THEME_ARGS $BACKUP_ARGS < /dev/null
 
       # Pebble creates a new issuing root at startup; checks verify against it
       - name: Trust Pebble's issuing root (HTTPS)
@@ -226,6 +255,9 @@ jobs:
 
       - name: Check the stack
         run: bash "$E2E/check-stack.sh"
+
+      - name: Check CTFd's first-run setup
+        run: bash "$E2E/check-ctfd-setup.sh"
 
       - name: Check the themes (--no-instancer)
         if: matrix.id == 'no-instancer'
@@ -243,7 +275,9 @@ jobs:
         run: bash "$E2E/rerun-setup.sh"
 
       - name: Check the stack after the re-run
-        run: bash "$E2E/check-stack.sh"
+        run: |
+          bash "$E2E/check-stack.sh"
+          bash "$E2E/check-ctfd-setup.sh"
 
       # The re-run passes no theme options: installed themes must stay
       - name: Check the themes after the re-run (--no-instancer)
@@ -311,6 +345,11 @@ jobs:
       E2E: .github/scripts/setup-e2e
       VM_NAME: server
       INSTANCER: local
+      CTFD_ADMIN_NAME: ci-admin
+      CTFD_ADMIN_PASSWORD: 'ci P@ss&w0rd=1+2 #"x"'
+      EXPECT_CTF_NAME: PolyPwn-CI
+      EXPECT_USER_MODE: teams
+      ADMIN_ARGS: --admin-name ci-admin --admin-email admin@ci.example.org --ctf-name PolyPwn-CI --user-mode teams
     steps:
       - uses: actions/checkout@v7
 
@@ -320,10 +359,12 @@ jobs:
         run: bash "$E2E/vm-start.sh" debian/13
 
       - name: Run setup.sh
-        run: bash "$E2E/vm-run.sh" ./setup.sh $SETUP_ARGS
+        run: bash "$E2E/vm-run.sh" sudo --preserve-env=CTFD_ADMIN_PASSWORD ./setup.sh $SETUP_ARGS $ADMIN_ARGS
 
       - name: Check the stack
-        run: bash "$E2E/vm-run.sh" bash "$E2E/check-stack.sh"
+        run: |
+          bash "$E2E/vm-run.sh" bash "$E2E/check-stack.sh"
+          bash "$E2E/vm-run.sh" bash "$E2E/check-ctfd-setup.sh"
 
       - name: Deploy a challenge through Galvanize
         run: bash "$E2E/vm-run.sh" bash "$E2E/deploy-challenge.sh" ci-team-1
@@ -332,7 +373,9 @@ jobs:
         run: bash "$E2E/vm-run.sh" bash "$E2E/rerun-setup.sh"
 
       - name: Check the stack after the re-run
-        run: bash "$E2E/vm-run.sh" bash "$E2E/check-stack.sh"
+        run: |
+          bash "$E2E/vm-run.sh" bash "$E2E/check-stack.sh"
+          bash "$E2E/vm-run.sh" bash "$E2E/check-ctfd-setup.sh"
 
       - name: Deploy a challenge with the recreated SSH key
         run: bash "$E2E/vm-run.sh" bash "$E2E/deploy-challenge.sh" ci-team-2

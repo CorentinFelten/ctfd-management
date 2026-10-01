@@ -9,7 +9,8 @@ set -euo pipefail
 : "${VM_NAME:?VM_NAME must be set (see vm-start.sh)}"
 
 declare -a vars=(HOME=/home/ci USER=ci LOGNAME=ci)
-for v in DEPLOY_DIR SERVER_IP DOMAIN SETUP_ARGS INSTANCER INSTANCER_URL FRESH_INSTALL CA_FILE; do
+for v in DEPLOY_DIR SERVER_IP DOMAIN SETUP_ARGS INSTANCER INSTANCER_URL FRESH_INSTALL CA_FILE \
+         CTFD_ADMIN_NAME CTFD_ADMIN_PASSWORD EXPECT_USER_MODE EXPECT_CTF_NAME EXPECT_TEAM_SIZE; do
     if [[ -n "${!v:-}" ]]; then
         vars+=("$v=${!v}")
     fi

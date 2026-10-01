@@ -12,7 +12,10 @@ services:
       # The static traefik.yml already handles HTTP→HTTPS redirect and default TLS.
       # Labels only need routing rule, middleware, and service port.
       - "traefik.docker.network=${COMPOSE_PROJECT_NAME:-ctfd_infra}_proxy"
-      - "traefik.http.routers.ctfd.rule=Host(`${BASE_DOMAIN}`)"
+      # /setup (CTFd's first-run web wizard) is never routed: setup.sh creates
+      # the first admin from the command line, so nobody can claim the
+      # instance through the browser before or after that
+      - "traefik.http.routers.ctfd.rule=Host(`${BASE_DOMAIN}`) && !PathPrefix(`/setup`)"
       - "traefik.http.routers.ctfd.middlewares=security-headers@file"
       - "traefik.http.services.ctfd.loadbalancer.server.port=8000"
     environment:

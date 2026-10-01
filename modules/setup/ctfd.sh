@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # modules/setup/ctfd.sh — Copy config templates to DEPLOY_DIR, clone plugins, generate secrets, pull/build images.
-# Requires: lib/common.sh, lib/env.sh, modules/setup/instancer.sh, modules/setup/theme.sh
+# Requires: lib/common.sh, lib/env.sh, modules/setup/instancer.sh, modules/setup/theme.sh,
+#           modules/setup/ctfd_admin.sh
 
 [[ -n "${_SETUP_CTFD_LOADED:-}" ]] && return 0
 readonly _SETUP_CTFD_LOADED=1
@@ -328,6 +329,8 @@ install_ctfd() {
         log_success "CTFd restarted"
     fi
 
+    # First admin and event settings (new deployments), then the theme
+    run_ctfd_first_setup compose_cmd
     apply_active_theme compose_cmd
 
     log_success "CTFd installation complete!"
