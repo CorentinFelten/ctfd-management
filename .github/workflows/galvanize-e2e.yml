@@ -1,0 +1,55 @@
+name: Galvanize end-to-end
+
+# Tests a Galvanize version that is not published yet, e.g. a fork branch with
+# a fix meant for 28Pollux28/galvanize: builds it from the given repository
+# and ref, then runs one complete setup end-to-end job on Ubuntu with it
+# (setup-e2e-ubuntu.yml), deploying it with its own playbooks
+# (.github/scripts/setup-e2e/use-galvanize-ref.sh).
+#
+# One job instead of setup-e2e.yml's five: the other scenarios do not run
+# Galvanize locally, and the Debian VM job tests the setup script on Debian
+# rather than Galvanize, and its VM can take long to boot.
+#
+#   gh workflow run galvanize-e2e.yml --ref main \
+#     -f galvanize_repository=CorentinFelten/galvanize -f galvanize_ref=<branch>
+
+run-name: Galvanize ${{ inputs.galvanize_repository }}@${{ inputs.galvanize_ref }} (${{ inputs.tls }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      galvanize_repository:
+        description: "Galvanize repository to build and test (owner/repo)"
+        required: true
+        default: CorentinFelten/galvanize
+      galvanize_ref:
+        description: "Branch, tag or commit of that repository"
+        required: true
+      tls:
+        description: "http: the --no-https job (deploys, re-runs, restores a backup, switches instancers); https: the HTTPS job with Pebble certificates"
+        type: choice
+        options:
+          - http
+          - https
+        default: http
+
+# One run per Galvanize ref: a new run for the same ref replaces the old one,
+# runs for other refs (and setup-e2e.yml runs) are left alone
+concurrency:
+  group: galvanize-e2e-${{ inputs.galvanize_repository }}-${{ inputs.galvanize_ref }}-${{ inputs.tls }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Ubuntu
+    uses: ./.github/workflows/setup-e2e-ubuntu.yml
+    with:
+      galvanize_repository: ${{ inputs.galvanize_repository }}
+      galvanize_ref: ${{ inputs.galvanize_ref }}
+      scenarios: >-
+        ${{ inputs.tls == 'https'
+          && '[{ "name": "HTTPS (Pebble)", "id": "https", "tls": "https", "instancer": "local" }]'
+          || '[{ "name": "--no-https", "id": "http", "tls": "http", "instancer": "local" }]' }}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manual CI runs only: builds Galvanize from GALVANIZE_REPOSITORY at
+# galvanize-e2e.yml only: builds Galvanize from GALVANIZE_REPOSITORY at
 # GALVANIZE_REF (e.g. a fork branch with a fix to test) and points the
 # checkout's compose template and Galvanize playbooks at it, so setup.sh
 # deploys that version instead of ghcr.io/28pollux28/galvanize:latest and
