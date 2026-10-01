@@ -54,14 +54,14 @@ install_ctfd() {
         local backup_suffix="backup_$(date +%Y%m%d_%H%M%S)"
         log_info "Existing deployment detected — backing up config files"
         # Config only: the certificate store (setup never modifies it, and it
-        # holds private keys) and the plugin clones are left out
+        # holds private keys), the plugin clones and the themes are left out
         if [[ -d "$deploy_dir/traefik-config" ]]; then
             cp -r "$deploy_dir/traefik-config" "$deploy_dir/traefik-config.${backup_suffix}"
             rm -rf "$deploy_dir/traefik-config.${backup_suffix}/letsencrypt"
         fi
         if [[ -d "$deploy_dir/ctfd" ]]; then
             cp -r "$deploy_dir/ctfd" "$deploy_dir/ctfd.${backup_suffix}"
-            rm -rf "$deploy_dir/ctfd.${backup_suffix}/plugins"
+            rm -rf "$deploy_dir/ctfd.${backup_suffix}/plugins" "$deploy_dir/ctfd.${backup_suffix}/themes"
         fi
         cp "$deploy_dir/docker-compose.yml" "$deploy_dir/docker-compose.yml.${backup_suffix}"
         log_success "Backed up existing configs with suffix: $backup_suffix"
@@ -310,6 +310,9 @@ install_ctfd() {
     local -a compose_cmd=(docker compose -p "$compose_project_name" -f "$compose_file")
     [[ "$use_local_instancer" == "true" ]] && compose_cmd+=(--profile instancer)
 
+    # ── Custom themes (built into the CTFd image) ──
+    setup_themes
+
     log_info "Building CTFd docker image... This may take a while"
     "${compose_cmd[@]}" build
     log_success "CTFd docker image successfully built"
@@ -317,23 +320,6 @@ install_ctfd() {
     log_info "Pulling pre-built images (traefik, mariadb, redis${use_local_instancer:+, galvanize})..."
     "${compose_cmd[@]}" pull -q
     log_success "Docker images successfully pulled"
-
-    # ── Custom theme ──
-    if [[ -n "${CONFIG[THEME]}" ]]; then
-        log_info "Custom theme option enabled"
-
-        if setup_custom_theme; then
-            if sed -i 's|^[[:space:]]*#\(.*CTFd/themes.*\)|\1|' "$compose_file"; then
-                log_success "Custom theme volume mount enabled in docker-compose.yml"
-            else
-                log_warning "Could not uncomment theme line in docker-compose.yml; enable it manually"
-            fi
-            setup_env_key THEME_NAME "${CONFIG[THEME_NAME]}"
-            log_info "THEME_NAME set to: ${CONFIG[THEME_NAME]}"
-        else
-            log_warning "Theme setup failed, but continuing with setup"
-        fi
-    fi
 
     # ── Start containers ──
     # A previously local instancer is no longer wanted: stop and remove it,
@@ -358,6 +344,9 @@ install_ctfd() {
         "${compose_cmd[@]}" restart ctfd
         log_success "CTFd restarted"
     fi
+
+    apply_active_theme compose_cmd
+
     log_success "CTFd installation complete!"
     log_info ""
     log_info "CTFd is now available at: ${ctfd_full_url}"

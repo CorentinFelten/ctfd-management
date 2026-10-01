@@ -29,7 +29,7 @@ declare -A CONFIG=(
     [CONFIGURE_DOCKER]="true"
     [WORKING_DIR]="$(invoking_user_home)"
     [DEPLOY_DIR]=""
-    [THEME]=""
+    [ACTIVE_THEME]=""
     [BACKUP_SCHEDULE]="daily"
     [JWT_SECRET_KEY]=""
     [DOCKER_ENV_FILE]="env.production"
@@ -48,7 +48,12 @@ Options:
     -d, --domain URL          Set CTFd URL (mandatory)
                                 Note: IP addresses automatically enable --no-https
     -w, --working-folder DIR    Set working directory (default: your home directory)
-    -t, --theme PATH_OR_URL     Path to local theme folder or Git URL to clone
+    -t, --theme SOURCE          Install a custom CTFd theme (repeatable). SOURCE is a
+                                local folder or a Git URL, optionally with #REF to
+                                clone a branch or tag. Installed themes are kept on
+                                re-runs; giving a theme again updates it.
+        --remove-theme NAME     Remove an installed custom theme (repeatable)
+        --active-theme NAME     Make NAME CTFd's active theme
     -b, --backup-schedule TYPE  Set backup schedule: daily, hourly, or 10min (default: daily)
     -i, --instancer-url URL     Use an external Galvanize instancer (skips local setup)
         --no-instancer          Skip Galvanize setup entirely (deploy it separately later)
@@ -68,8 +73,9 @@ Options:
 Directory structure:
     <working-folder>/deploy/                          Deployment working directory (configs, .env, compose)
     <working-folder>/deploy/traefik-config/           Traefik static & dynamic configs, letsencrypt
-    <working-folder>/deploy/ctfd-config/              CTFd Dockerfile and custom entrypoint
-    <working-folder>/deploy/ctfd-config/plugins/zync/ CTFd instancer plugin clone
+    <working-folder>/deploy/ctfd/                     CTFd image build context (Dockerfile, entrypoint)
+    <working-folder>/deploy/ctfd/plugins/zync/        CTFd instancer plugin clone
+    <working-folder>/deploy/ctfd/themes/              Custom themes, built into the CTFd image
     <working-folder>/deploy/ansible-ssh/              Ansible SSH key pair
     <working-folder>/deploy/data/                     Runtime data (database, uploads, galvanize)
     <working-folder>/deploy/cron_backup.log           Backup cron job log
@@ -80,7 +86,8 @@ Examples:
     $SCRIPT_NAME --domain 192.168.1.100
     $SCRIPT_NAME --domain example.com --working-folder /opt/ctfd
     $SCRIPT_NAME --domain example.com --theme /home/user/my-custom-theme
-    $SCRIPT_NAME --domain example.com --theme https://github.com/user/theme.git
+    $SCRIPT_NAME --domain example.com --theme https://github.com/user/theme.git#v2.0 \
+        --theme ./second-theme --active-theme theme
     $SCRIPT_NAME --domain example.com --acme-email admin@example.com
     $SCRIPT_NAME --domain example.com --backup-schedule hourly
     $SCRIPT_NAME --domain 192.168.1.100 --yes
@@ -100,7 +107,13 @@ parse_arguments() {
                 CONFIG[WORKING_DIR]="$2"; shift 2 ;;
             -t|--theme)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --theme"
-                CONFIG[THEME]="$2"; shift 2 ;;
+                THEME_SOURCES+=("$2"); shift 2 ;;
+            --remove-theme)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --remove-theme"
+                THEMES_TO_REMOVE+=("$2"); shift 2 ;;
+            --active-theme)
+                [[ -n ${2:-} ]] || error_exit "Missing value for --active-theme"
+                CONFIG[ACTIVE_THEME]="$2"; shift 2 ;;
             -b|--backup-schedule)
                 [[ -n ${2:-} ]] || error_exit "Missing value for --backup-schedule"
                 case ${2,,} in

@@ -11,6 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 COPY custom-entrypoint.sh /opt/CTFd/custom-entrypoint.sh
 RUN chmod +x /opt/CTFd/custom-entrypoint.sh
 
+# Custom themes (installed by setup.sh --theme), merged next to CTFd's own
+# core and admin themes
+COPY --chown=1001:1001 themes/ /opt/CTFd/CTFd/themes/
+
 USER 1001
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=60s \
