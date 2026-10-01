@@ -1,0 +1,327 @@
+name: Setup end-to-end (Ubuntu)
+
+# The Ubuntu jobs of the setup end-to-end tests, shared by setup-e2e.yml
+# (every scenario, on each push) and galvanize-e2e.yml (one scenario, with a
+# Galvanize version built from a repository and ref). See setup-e2e.yml for
+# what each scenario covers.
+
+on:
+  workflow_call:
+    inputs:
+      scenarios:
+        description: >-
+          JSON list of the scenarios to run, each
+          {name, id, tls: http|https, instancer: local|none|external}
+        type: string
+        required: true
+      galvanize_repository:
+        description: "Galvanize repository to build and deploy (owner/repo); empty: the published image"
+        type: string
+        default: ""
+      galvanize_ref:
+        description: "Branch, tag or commit of galvanize_repository"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: setup.sh ${{ matrix.name }} (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.scenarios) }}
+    env:
+      E2E: .github/scripts/setup-e2e
+      TLS: ${{ matrix.tls }}
+      INSTANCER: ${{ matrix.instancer }}
+      # Never contacted: setup.sh only hands it to CTFd
+      EXTERNAL_INSTANCER_URL: https://instancer.ci-external.example.org
+      PEBBLE_IMAGE: ghcr.io/letsencrypt/pebble:2.10.1
+      # First admin, created by setup.sh (CTFd's web setup is disabled). The
+      # password has spaces and URL-special characters to test its encoding.
+      CTFD_ADMIN_NAME: ci-admin
+      CTFD_ADMIN_PASSWORD: 'ci P@ss&w0rd=1+2 #"x"'
+      EXPECT_CTF_NAME: PolyPwn-CI
+    steps:
+      - uses: actions/checkout@v7
+
+      # setup.sh expects a server that already runs sshd: Galvanize deploys
+      # challenges with Ansible over SSH to the --domain address.
+      - name: Prepare the runner as a server
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server
+          sudo systemctl enable --now ssh
+          # setup.sh runs apt-get upgrade, which also upgrades the runner's
+          # firefox package: it installs a snap and fails whenever the Snap
+          # store does not answer. It has nothing to do with setup.sh.
+          sudo apt-mark hold firefox >/dev/null
+          server_ip="$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
+          [[ -n "$server_ip" ]] || { echo "::error::Could not determine the runner's IP address"; exit 1; }
+
+          if [[ "$TLS" == https ]]; then
+            domain="${server_ip//./-}.sslip.io"
+            setup_args="--domain $domain --acme-email ci@example.org --dns-provider cloudflare"
+            getent hosts "$domain" "instancer.$domain" \
+              || { echo "::error::$domain does not resolve (sslip.io unreachable?)"; exit 1; }
+          else
+            domain="$server_ip"
+            setup_args="--domain $server_ip"
+          fi
+
+          # First-run options, passed to the first run only: re-runs must
+          # work without them. Both user modes are covered.
+          if [[ "$INSTANCER" == none ]]; then
+            mode_args="--user-mode users"
+            echo "EXPECT_USER_MODE=users" >> "$GITHUB_ENV"
+          else
+            mode_args="--user-mode teams --team-size 4"
+            { echo "EXPECT_USER_MODE=teams"; echo "EXPECT_TEAM_SIZE=4"; } >> "$GITHUB_ENV"
+          fi
+          echo "ADMIN_ARGS=--admin-name $CTFD_ADMIN_NAME --admin-email admin@ci.example.org --ctf-name $EXPECT_CTF_NAME $mode_args" >> "$GITHUB_ENV"
+
+          case "$INSTANCER" in
+            none)     setup_args+=" --no-instancer" ;;
+            external) setup_args+=" --instancer-url $EXTERNAL_INSTANCER_URL"
+                      echo "INSTANCER_URL=$EXTERNAL_INSTANCER_URL" >> "$GITHUB_ENV" ;;
+          esac
+
+          {
+            echo "SERVER_IP=$server_ip"
+            echo "DOMAIN=$domain"
+            echo "SETUP_ARGS=$setup_args --working-folder $HOME --yes"
+            echo "DEPLOY_DIR=$HOME/deploy"
+          } >> "$GITHUB_ENV"
+          echo "Server IP: $server_ip, domain: $domain, setup.sh $setup_args"
+
+      # Two themes: a local folder (with a hidden file, which must be copied)
+      # and a Git repository, pinned to a tag older than its last commit
+      - name: Prepare theme fixtures (--no-instancer)
+        if: matrix.id == 'no-instancer'
+        run: |
+          themes="$RUNNER_TEMP/themes"
+          mkdir -p "$themes/alpha/templates"
+          echo alpha > "$themes/alpha/templates/version.txt"
+          echo hidden > "$themes/alpha/.hidden"
+
+          git init -q -b main "$themes/beta-src"
+          mkdir "$themes/beta-src/templates"
+          ci_git() { git -C "$themes/beta-src" -c user.name=ci -c user.email=ci@example.org "$@"; }
+          echo v1 > "$themes/beta-src/templates/version.txt"
+          ci_git add -A && ci_git commit -qm v1 && ci_git tag v1
+          echo v2 > "$themes/beta-src/templates/version.txt"
+          ci_git commit -qam v2
+          git clone -q --bare "$themes/beta-src" "$themes/beta.git"
+
+          echo "THEME_ARGS=--theme $themes/alpha --theme $themes/beta.git#v1 --active-theme alpha" >> "$GITHUB_ENV"
+
+      # An S3 bucket on the runner, served by rclone, and an rclone.conf
+      # defining it, as a user would pass with --backup-rclone-config
+      - name: Start an S3 bucket for backups (--instancer-url)
+        if: matrix.id == 'external-instancer'
+        run: |
+          mkdir -p "$RUNNER_TEMP/s3/ctfd-backups"
+          docker run -d --name s3 -p 9000:9000 -v "$RUNNER_TEMP/s3:/data" \
+            rclone/rclone:1.75.1 serve s3 /data --addr :9000 --auth-key ci-access,ci-secret
+          cat > "$RUNNER_TEMP/rclone.conf" <<CONF
+          [ci-s3]
+          type = s3
+          provider = Other
+          access_key_id = ci-access
+          secret_access_key = ci-secret
+          endpoint = http://$SERVER_IP:9000
+          CONF
+          for _ in $(seq 30); do
+            curl -s -o /dev/null "http://$SERVER_IP:9000/" && break
+            sleep 1
+          done
+          {
+            echo "BACKUP_ARGS=--backup-remote ci-s3:ctfd-backups/ci --backup-rclone-config $RUNNER_TEMP/rclone.conf"
+            echo "EXPECT_BACKUP_REMOTE=ci-s3:ctfd-backups/ci"
+          } >> "$GITHUB_ENV"
+
+      # A folder, given as an rclone connection string (no rclone.conf)
+      - name: Use a folder as the backup remote (--no-instancer)
+        if: matrix.id == 'no-instancer'
+        run: |
+          {
+            echo "BACKUP_ARGS=--backup-remote :local:$HOME/offsite-backups"
+            echo "EXPECT_BACKUP_REMOTE=:local:$HOME/offsite-backups"
+            echo "CHECK_REMOTE_RETENTION=true"
+          } >> "$GITHUB_ENV"
+
+      # Each must fail before setup.sh changes anything on the system
+      - name: setup.sh rejects invalid first runs
+        if: matrix.id == 'http'
+        run: |
+          expect_failure() {
+            local message="$1"; shift
+            if output="$("$@" < /dev/null 2>&1)"; then
+              echo "$output"; echo "::error::Accepted: $*"; exit 1
+            fi
+            grep -F -- "$message" <<< "$output" >/dev/null \
+              || { echo "$output"; echo "::error::Expected '$message' from: $*"; exit 1; }
+            echo "ok  refused ($message): $*"
+          }
+          admin="--admin-name $CTFD_ADMIN_NAME --admin-email admin@ci.example.org --user-mode teams"
+          expect_failure "loopback address" ./setup.sh --domain 127.0.0.1 $admin --yes
+          expect_failure "missing --admin-name --admin-email --user-mode" ./setup.sh --domain "$SERVER_IP" --yes
+          expect_failure "missing --user-mode" ./setup.sh --domain "$SERVER_IP" --admin-name a --admin-email a@ci.example.org --yes
+          expect_failure "not a valid email" ./setup.sh --domain "$SERVER_IP" --admin-name a --admin-email nope --user-mode teams --yes
+          expect_failure "cannot be an email address" ./setup.sh --domain "$SERVER_IP" --admin-name a@ci.example.org --admin-email a@ci.example.org --user-mode teams --yes
+          # CTFD_ADMIN_PASSWORD is not kept through setup.sh's own sudo
+          expect_failure "set CTFD_ADMIN_PASSWORD" ./setup.sh --domain "$SERVER_IP" $admin --yes
+          [[ ! -e "$DEPLOY_DIR" ]] || { echo "::error::A refused run created $DEPLOY_DIR"; exit 1; }
+
+      - name: Start Pebble (HTTPS)
+        if: matrix.tls == 'https'
+        run: |
+          # No nonce rejections: they only test client retries and make runs flaky
+          docker run -d --name pebble --restart unless-stopped \
+            -p 14000:14000 -p 15000:15000 \
+            -e PEBBLE_VA_ALWAYS_VALID=1 -e PEBBLE_VA_NOSLEEP=1 -e PEBBLE_WFE_NONCEREJECT=0 \
+            "$PEBBLE_IMAGE"
+          # CA of Pebble's own HTTPS endpoint (not of the certificates it issues),
+          # placed where the Traefik container sees it (letsencrypt/ is mounted)
+          mkdir -p "$DEPLOY_DIR/traefik-config/letsencrypt"
+          docker cp pebble:/test/certs/pebble.minica.pem "$DEPLOY_DIR/traefik-config/letsencrypt/pebble-minica.pem"
+          for _ in $(seq 30); do
+            curl -fsS --cacert "$DEPLOY_DIR/traefik-config/letsencrypt/pebble-minica.pem" \
+              https://localhost:14000/dir >/dev/null && exit 0
+            sleep 2
+          done
+          echo "::error::Pebble did not start"; docker logs pebble; exit 1
+
+      # CI only: the checkout's Traefik template is pointed at Pebble instead of
+      # Let's Encrypt, and the DNS-01 challenge at lego's exec provider. setup.sh
+      # copies and patches this template as usual.
+      - name: Point the Traefik template at Pebble (HTTPS)
+        if: matrix.tls == 'https'
+        run: |
+          yq -i '
+            .certificatesResolvers.letsencrypt.acme.caServer = "https://" + strenv(SERVER_IP) + ":14000/dir" |
+            .certificatesResolvers.letsencrypt.acme.caServerName = "pebble" |
+            .certificatesResolvers.letsencrypt.acme.caCertificates = ["/etc/traefik/letsencrypt/pebble-minica.pem"] |
+            .certificatesResolvers.letsencrypt.acme.dnsChallenge.provider = "exec" |
+            .certificatesResolvers.letsencrypt.acme.dnsChallenge.propagation.disableChecks = true
+          ' config/traefik/traefik.yml
+          git diff -- config/traefik/traefik.yml
+
+          # Existing DNS credentials, which setup.sh --yes must keep, plus the
+          # no-op command the exec provider runs instead of a DNS API call
+          (
+            umask 077
+            cat > "$DEPLOY_DIR/traefik.env" <<'ENV'
+          CF_DNS_API_TOKEN=ci-placeholder-token
+          EXEC_PATH=/bin/true
+          ENV
+          )
+
+      - name: Build the Galvanize under test
+        if: inputs.galvanize_repository != '' && matrix.instancer == 'local'
+        env:
+          GALVANIZE_REPOSITORY: ${{ inputs.galvanize_repository }}
+          GALVANIZE_REF: ${{ inputs.galvanize_ref }}
+        run: bash "$E2E/use-galvanize-ref.sh"
+
+      # stdin is /dev/null so any prompt that --yes misses fails the run
+      # sudo --preserve-env keeps the admin password from the environment
+      - name: Run setup.sh
+        run: sudo --preserve-env=CTFD_ADMIN_PASSWORD ./setup.sh $SETUP_ARGS $ADMIN_ARGS $THEME_ARGS $BACKUP_ARGS < /dev/null
+
+      # Pebble creates a new issuing root at startup; checks verify against it
+      - name: Trust Pebble's issuing root (HTTPS)
+        if: matrix.tls == 'https'
+        run: |
+          curl -fsS --cacert "$DEPLOY_DIR/traefik-config/letsencrypt/pebble-minica.pem" \
+            https://localhost:15000/roots/0 > "$RUNNER_TEMP/pebble-root.pem"
+          echo "CA_FILE=$RUNNER_TEMP/pebble-root.pem" >> "$GITHUB_ENV"
+
+      - name: Check the stack
+        run: bash "$E2E/check-stack.sh"
+
+      - name: Check CTFd's first-run setup
+        run: bash "$E2E/check-ctfd-setup.sh"
+
+      - name: Check the themes (--no-instancer)
+        if: matrix.id == 'no-instancer'
+        env:
+          EXPECT_THEMES: alpha beta
+          EXPECT_FILES: alpha/.hidden alpha/templates/version.txt=alpha beta/templates/version.txt=v1
+          ACTIVE_THEME: alpha
+        run: bash "$E2E/check-themes.sh"
+
+      - name: Deploy a challenge through Galvanize
+        if: matrix.instancer == 'local'
+        run: bash "$E2E/deploy-challenge.sh" ci-team-1
+
+      - name: Re-run setup.sh
+        run: bash "$E2E/rerun-setup.sh"
+
+      - name: Check the stack after the re-run
+        run: |
+          bash "$E2E/check-stack.sh"
+          bash "$E2E/check-ctfd-setup.sh"
+
+      # The re-run passes no theme options: installed themes must stay
+      - name: Check the themes after the re-run (--no-instancer)
+        if: matrix.id == 'no-instancer'
+        env:
+          EXPECT_THEMES: alpha beta
+          ACTIVE_THEME: alpha
+        run: bash "$E2E/check-themes.sh"
+
+      - name: Remove a theme and reset the active theme (--no-instancer)
+        if: matrix.id == 'no-instancer'
+        env:
+          EXPECT_THEMES: alpha
+          ABSENT_THEMES: beta
+          ACTIVE_THEME: core
+        run: |
+          bash "$E2E/rerun-setup.sh" --remove-theme beta --active-theme core
+          bash "$E2E/check-themes.sh"
+
+      - name: Deploy a challenge with the recreated SSH key
+        if: matrix.instancer == 'local'
+        run: bash "$E2E/deploy-challenge.sh" ci-team-2
+
+      # Restores the latest backup (MariaDB, uploads, Galvanize database,
+      # with Galvanize stopped meanwhile), answering yes to the confirmation,
+      # then checks the whole stack again
+      - name: Restore the latest backup
+        if: matrix.id == 'http'
+        run: |
+          yes | "$DEPLOY_DIR/backup/restore_db.sh" latest
+          # As restore_db.sh asks: CTFd's database was dropped and recreated
+          (cd "$DEPLOY_DIR" && docker compose restart ctfd)
+          bash "$E2E/check-stack.sh"
+
+      # Re-running setup with --instancer-url must stop and remove the local
+      # instancer container (compose leaves containers of inactive profiles
+      # running). Its data and Ansible user are left behind on purpose.
+      - name: Switch to an external instancer
+        if: matrix.id == 'http'
+        env:
+          INSTANCER: external
+          INSTANCER_URL: ${{ env.EXTERNAL_INSTANCER_URL }}
+          FRESH_INSTALL: "false"
+        run: |
+          bash "$E2E/rerun-setup.sh" --instancer-url "$INSTANCER_URL"
+          bash "$E2E/check-stack.sh"
+
+      - name: Collect diagnostics
+        if: failure()
+        run: bash "$E2E/collect-diagnostics.sh" "$RUNNER_TEMP/diagnostics"
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: setup-e2e-diagnostics-${{ matrix.id }}
+          path: ${{ runner.temp }}/diagnostics
+          if-no-files-found: ignore
