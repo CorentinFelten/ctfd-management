@@ -276,8 +276,11 @@ install_ctfd() {
 
     # ── Traefik ──
     mkdir -p "$deploy_dir/traefik-config/letsencrypt"
-    # Traefik's env_file must exist even when no DNS credentials were set
+    # Traefik's env_file must exist even when no DNS credentials were set.
+    # Owned like the rest of the deploy dir, so the backup cron job, which
+    # runs as that user, can archive it (Traefik reads it as root).
     ensure_traefik_env_file
+    chown "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$(traefik_env_file)"
     _render_traefik_configs "$deploy_dir/traefik-config" "$challenge_network" \
         "${CONFIG[DOMAIN]}" "$acme_email" "$dns_provider"
     if [[ "${CONFIG[NO_HTTPS]:-}" == "true" ]]; then

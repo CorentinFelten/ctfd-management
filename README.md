@@ -132,11 +132,14 @@ Deployments made before this change mounted a single theme from `deploy/data/CTF
 
 ## Backups
 
-`setup.sh` installs a cron job (`--backup-schedule`, daily by default) that runs `deploy/backup/backup_db.sh`. Each run dumps the MariaDB database and archives CTFd's uploads into `<working-folder>/backups/ctfd_backup_<date>.tar.gz`, keeping the 5 most recent archives there. Restore one with `deploy/backup/restore_db.sh <archive>` (or `latest`).
+`setup.sh` installs a cron job (`--backup-schedule`, daily by default) that runs `deploy/backup/backup_db.sh`. Each run writes two archives to `<working-folder>/backups/`, keeping the 5 most recent of each:
+
+- `ctfd_backup_<date>.tar.gz`: the MariaDB database, CTFd's uploads, and the Galvanize instancer's database (deployments and published port bindings, copied consistently while Galvanize runs). Restore it with `deploy/backup/restore_db.sh <archive>` (or `latest`), which stops Galvanize while its database is replaced.
+- `ctfd_config_<date>.tar.gz` (chmod 600): the deployment's `.env`, `.secrets` and `traefik.env`, needed to rebuild the server. It holds every secret of the deployment, so it is never uploaded off-site (see below) and is not restored automatically: extract what you need from it with `tar -xzf`.
 
 ### Off-site copies in a bucket
 
-With `--backup-remote`, every archive is also uploaded to a bucket, right after it is created. The upload uses [rclone](https://rclone.org/), so any provider rclone supports works: AWS S3 and S3-compatible storage (Cloudflare R2, Backblaze B2, Wasabi, OVHcloud, Scaleway, MinIO…), Google Cloud Storage, Azure Blob Storage, SFTP and [many more](https://rclone.org/overview/). Setup installs rclone and checks that the bucket can be written to before finishing, so wrong credentials fail at setup time, not at the first backup.
+With `--backup-remote`, every `ctfd_backup_*` archive is also uploaded to a bucket, right after it is created (the config archive stays on the server). The upload uses [rclone](https://rclone.org/), so any provider rclone supports works: AWS S3 and S3-compatible storage (Cloudflare R2, Backblaze B2, Wasabi, OVHcloud, Scaleway, MinIO…), Google Cloud Storage, Azure Blob Storage, SFTP and [many more](https://rclone.org/overview/). Setup installs rclone and checks that the bucket can be written to before finishing, so wrong credentials fail at setup time, not at the first backup.
 
 `--backup-remote` takes an rclone `REMOTE:PATH`. Define the remote once with `rclone config` (on any machine) and pass the resulting file with `--backup-rclone-config`:
 
@@ -156,7 +159,7 @@ Credentials that come from the server itself (an AWS instance role, GCP workload
 - The config is stored in `deploy/backup/rclone.conf` (chmod 600, owned by the user the cron job runs as). The settings are kept on later setup runs; change them by passing the options again, or stop uploading with `--no-backup-remote`.
 - Uploaded archives older than 30 days are deleted after each upload. Change this with `--backup-remote-retention DAYS`, or use `0` to keep everything (for example to let the bucket's own lifecycle rules handle expiry).
 - A failed upload keeps the local archive and makes the backup run fail, with the details in `<working-folder>/backups/backup.log` and the cron log.
-- The archives hold the whole CTFd database, including flags and password hashes. To encrypt them before they leave the server, whatever the provider, point `--backup-remote` at an rclone [`crypt`](https://rclone.org/crypt/) remote that wraps the bucket.
+- The uploaded archives hold the whole CTFd database, including flags and password hashes. To encrypt them before they leave the server, whatever the provider, point `--backup-remote` at an rclone [`crypt`](https://rclone.org/crypt/) remote that wraps the bucket.
 
 To restore from the bucket, for example on a new server after running setup there with the same `--backup-remote`:
 

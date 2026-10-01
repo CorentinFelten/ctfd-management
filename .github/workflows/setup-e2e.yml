@@ -267,6 +267,17 @@ jobs:
         if: matrix.instancer == 'local'
         run: bash "$E2E/deploy-challenge.sh" ci-team-2
 
+      # Restores the latest backup (MariaDB, uploads, Galvanize database,
+      # with Galvanize stopped meanwhile), answering yes to the confirmation,
+      # then checks the whole stack again
+      - name: Restore the latest backup
+        if: matrix.id == 'http'
+        run: |
+          yes | "$DEPLOY_DIR/backup/restore_db.sh" latest
+          # As restore_db.sh asks: CTFd's database was dropped and recreated
+          (cd "$DEPLOY_DIR" && docker compose restart ctfd)
+          bash "$E2E/check-stack.sh"
+
       # Re-running setup with --instancer-url must stop and remove the local
       # instancer container (compose leaves containers of inactive profiles
       # running). Its data and Ansible user are left behind on purpose.

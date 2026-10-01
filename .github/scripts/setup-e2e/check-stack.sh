@@ -267,11 +267,36 @@ tar -tzf "$latest" | grep '/database.sql$' >/dev/null \
     || fail "$latest has no database dump"
 pass "backup_db.sh produced $(readlink -f "$latest")"
 
+if [[ "$INSTANCER" == local ]]; then
+    tmp="$(mktemp -d)"
+    tar -xzf "$latest" -C "$tmp" --wildcards '*/galvanize/deployer.sqlite' \
+        || fail "$latest has no Galvanize database"
+    python3 - "$tmp"/*/galvanize/deployer.sqlite <<'PY' || fail "The Galvanize database in $latest is not usable"
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+db.execute("SELECT count(*) FROM deployments").fetchone()
+PY
+    rm -rf "$tmp"
+    pass "The backup holds a valid Galvanize database"
+fi
+
+config_archive="$(dirname "$DEPLOY_DIR")/backups/latest_config.tar.gz"
+[[ "$(stat -c %a "$(readlink -f "$config_archive")")" == 600 ]] \
+    || fail "$config_archive is not chmod 600"
+config_files="$(tar -tzf "$config_archive")"
+for f in .env .secrets traefik.env; do
+    grep -Fx "$f" <<< "$config_files" >/dev/null || fail "$f is missing from $config_archive"
+done
+pass "Config archive $(basename "$(readlink -f "$config_archive")") holds .env, .secrets and traefik.env (chmod 600)"
+
 if [[ -n "$remote" ]]; then
     uploaded="$("${rclone_cmd[@]}" lsf --files-only "$remote")" || fail "Could not list $remote"
     archive="$(basename "$(readlink -f "$latest")")"
     grep -Fx "$archive" <<< "$uploaded" >/dev/null || fail "$archive was not uploaded to $remote: $uploaded"
     pass "The backup was uploaded to $remote"
+    ! grep '^ctfd_config_' <<< "$uploaded" >/dev/null || fail "A config archive was uploaded to $remote"
+    pass "No config archive on $remote"
     if [[ "${CHECK_REMOTE_RETENTION:-}" == true ]]; then
         ! grep -Fx "$old_archive" <<< "$uploaded" >/dev/null \
             || fail "The archive dated 2001 is still on $remote (retention: 30 days)"

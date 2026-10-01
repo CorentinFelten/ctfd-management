@@ -1,7 +1,10 @@
 #!/bin/bash
 # CTFd Essential Backup Script
-# Backs up MariaDB database and CTFd uploads (everything needed for complete restoration),
-# and optionally uploads the archive to an off-site bucket (setup.sh --backup-remote)
+# Backs up the MariaDB database, CTFd uploads and the Galvanize instancer's
+# database into ctfd_backup_<date>.tar.gz, optionally uploaded to an off-site
+# bucket (setup.sh --backup-remote). The deployment's .env, .secrets and
+# traefik.env go into a separate ctfd_config_<date>.tar.gz (chmod 600) that
+# never leaves this server.
 #
 # Designed to run via cron. Uses flock to prevent concurrent executions.
 
@@ -21,6 +24,9 @@ readonly ENV_FILE="${_DEPLOY_DIR}/.env"
 readonly DOCKER_COMPOSE_PATH="${_DEPLOY_DIR}/docker-compose.yml"
 readonly BACKUP_BASE_DIR="$(dirname "${_DEPLOY_DIR}")/backups"
 readonly CTFD_UPLOADS_PATH="${_DEPLOY_DIR}/data/CTFd/uploads"
+readonly GALVANIZE_DB_PATH="${_DEPLOY_DIR}/data/galvanize/deployer.sqlite"
+# Deployment config and secrets, archived separately and never uploaded
+readonly CONFIG_FILES=(.env .secrets traefik.env)
 readonly MAX_BACKUPS=5
 readonly CONTAINER_NAME="maria-db"
 readonly LOCK_FILE="/tmp/ctfd_backup.lock"
@@ -95,7 +101,7 @@ fi
 mkdir -p "${BACKUP_DIR}"
 
 # ---------- Step 1: Backup MariaDB database ----------
-log_message "Step 1/2: Backing up MariaDB database..."
+log_message "Step 1/3: Backing up MariaDB database..."
 log_message "  Database contains: users, teams, challenges, submissions, solves, scores, flags, hints, settings, etc."
 
 # Use MYSQL_PWD env var instead of -p flag to avoid password exposure in ps output
@@ -121,7 +127,7 @@ if ! tail -5 "${BACKUP_DIR}/database.sql" | grep -Fq "Dump completed"; then
 fi
 
 # ---------- Step 2: Backup CTFd uploads ----------
-log_message "Step 2/2: Backing up CTFd uploads..."
+log_message "Step 2/3: Backing up CTFd uploads..."
 
 if [[ -d "${CTFD_UPLOADS_PATH}" ]]; then
     # Check if directory has content (avoid ls -A parsing issues)
@@ -140,6 +146,34 @@ else
     log_message "  If you have challenge files or user uploads, verify the path is correct"
 fi
 
+# ---------- Step 3: Backup the Galvanize instancer's database ----------
+# SQLite's online backup API (through Python, present on every supported
+# server) gives a consistent copy while Galvanize keeps writing to it in WAL
+# mode, which copying the file would not.
+log_message "Step 3/3: Backing up the Galvanize instancer database..."
+
+if [[ -f "${GALVANIZE_DB_PATH}" ]]; then
+    mkdir -p "${BACKUP_DIR}/galvanize"
+    if python3 - "${GALVANIZE_DB_PATH}" "${BACKUP_DIR}/galvanize/deployer.sqlite" <<'PY' >> "${LOG_FILE}" 2>&1
+import sqlite3, sys
+src = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True, timeout=30)
+dst = sqlite3.connect(sys.argv[2])
+with dst:
+    src.backup(dst)
+dst.close()
+src.close()
+PY
+    then
+        GALVANIZE_SIZE="$(du -h "${BACKUP_DIR}/galvanize/deployer.sqlite" | cut -f1)"
+        log_message "SUCCESS: Galvanize database backed up (${GALVANIZE_SIZE})"
+    else
+        log_message "ERROR: Galvanize database backup failed"
+        exit 1
+    fi
+else
+    log_message "INFO: No local Galvanize instancer database, skipping"
+fi
+
 # ---------- Create compressed archive ----------
 TOTAL_SIZE="$(du -sh "${BACKUP_DIR}" | cut -f1)"
 log_message "Total backup size: ${TOTAL_SIZE}"
@@ -155,6 +189,25 @@ rm -rf "${BACKUP_DIR}"
 
 # Create symlink to latest backup
 ln -sf "${BACKUP_BASE_DIR}/ctfd_backup_${TIMESTAMP}.tar.gz" "${BACKUP_BASE_DIR}/latest_backup.tar.gz"
+
+# ---------- Config and secrets archive (local only) ----------
+# The deployment's settings and generated secrets, needed to rebuild the
+# server. Separate from the data archive so it is never uploaded, and
+# readable only by its owner.
+CONFIG_ARCHIVE="${BACKUP_BASE_DIR}/ctfd_config_${TIMESTAMP}.tar.gz"
+config_present=()
+for f in "${CONFIG_FILES[@]}"; do
+    if [[ -r "${_DEPLOY_DIR}/${f}" ]]; then
+        config_present+=("${f}")
+    elif [[ -e "${_DEPLOY_DIR}/${f}" ]]; then
+        log_message "WARNING: ${_DEPLOY_DIR}/${f} is not readable by $(id -un), not archived"
+    fi
+done
+if (( ${#config_present[@]} > 0 )); then
+    ( umask 077; tar -czf "${CONFIG_ARCHIVE}" -C "${_DEPLOY_DIR}" "${config_present[@]}" )
+    ln -sf "${CONFIG_ARCHIVE}" "${BACKUP_BASE_DIR}/latest_config.tar.gz"
+    log_message "SUCCESS: Config files archived (${config_present[*]}), kept on this server only"
+fi
 
 # ---------- Clean up old backups ----------
 log_message "Cleaning up old backups, keeping only the ${MAX_BACKUPS} most recent..."
@@ -173,6 +226,13 @@ fi
 
 REMAINING_COUNT=$(find "${BACKUP_BASE_DIR}" -maxdepth 1 -name "ctfd_backup_*.tar.gz" -type f | wc -l)
 log_message "Retained ${REMAINING_COUNT} backup(s)"
+
+# Config archives follow the same rotation
+find "${BACKUP_BASE_DIR}" -maxdepth 1 -name "ctfd_config_*.tar.gz" -type f -printf '%T@ %p\n' \
+    | sort -rn \
+    | tail -n +"$((MAX_BACKUPS + 1))" \
+    | cut -d' ' -f2- \
+    | xargs -r rm -f
 
 # ---------- Upload to the off-site bucket ----------
 # Configured by setup.sh --backup-remote (rclone: S3 and S3-compatible, GCS,
