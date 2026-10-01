@@ -498,11 +498,12 @@ DNS provider credentials (for wildcard TLS certificates) are written to `<deploy
 
 ## Continuous Integration
 
-`.github/workflows/setup-e2e.yml` runs on every push (documentation-only changes excepted) and can be started manually from the Actions tab. It runs `setup.sh` for real on fresh Ubuntu 24.04 runners, in four jobs:
+`.github/workflows/setup-e2e.yml` runs on every push to a branch other than `main` (documentation-only changes excepted), and can be started manually from the Actions tab. Branches are merged into `main` once their run passes, so `main` is not tested again. It runs `setup.sh` for real on fresh Ubuntu 24.04 runners, in five jobs:
 
 - **no HTTPS**: `./setup.sh --domain <runner IP> --yes`, with the bundled Galvanize instancer. This job also checks that a loopback `--domain` is rejected, and finally re-runs setup with `--instancer-url` to check that switching to an external instancer stops and removes the local one.
 - **HTTPS**: `./setup.sh --domain <runner-ip>.sslip.io --acme-email … --dns-provider cloudflare --yes`, with the bundled instancer, against [Pebble](https://github.com/letsencrypt/pebble), Let's Encrypt's test ACME server, running on the runner. sslip.io resolves the domain and all its subdomains to the runner. For this job only, the CI points the checkout's Traefik template at Pebble and the DNS-01 challenge at lego's `exec` provider running a no-op (Pebble accepts every challenge), and pre-seeds `traefik.env` with a placeholder Cloudflare token that `--yes` must keep. A real DNS provider API and the real Let's Encrypt servers are not exercised.
 - **`--no-instancer`** and **`--instancer-url`** (no HTTPS): CTFd without a local instancer. The checks make sure no instancer container, Galvanize data, Ansible user or SSH key is created, that nothing is routed at `instancer.<domain>`, and that `.env` has the right `INSTANCER_MODE`, `COMPOSE_PROFILES` and `ZYNC_DEPLOYER_URL`.
+- **Debian 13** (no HTTPS, bundled instancer): GitHub has no Debian runners, so this job boots a fresh Debian 13 virtual machine on the runner with [Incus](https://linuxcontainers.org/incus/) (KVM), with only a sudo user and sshd, and runs `setup.sh` and the checks below inside it. Unlike on the Ubuntu runners, which ship with Docker, setup installs Docker from Docker's Debian repository here.
 
 Each job then:
 
@@ -510,7 +511,7 @@ Each job then:
 2. with the bundled instancer, deploys and terminates a challenge instance through the Galvanize API with a Zync-style JWT (`deploy-challenge.sh`), reaching it over HTTPS through Traefik (with certificate verification in HTTPS mode);
 3. re-runs `setup.sh --yes`, checks that the secrets are unchanged, then repeats the checks (and the deployment, with the recreated SSH key).
 
-On failure, container logs and redacted configs are uploaded as the `setup-e2e-diagnostics-<mode>` artifact. Debian is not covered.
+On failure, container logs and redacted configs are uploaded as the `setup-e2e-diagnostics-<job>` artifact.
 
 ## License
 

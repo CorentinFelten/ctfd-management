@@ -5,7 +5,11 @@ name: Setup end-to-end
 #     through Galvanize, and finally switches the deployment to an external
 #     instancer;
 #   - HTTPS (Pebble), local instancer: same, with certificates;
-#   - --no-instancer and --instancer-url: CTFd without a local instancer.
+#   - --no-instancer and --instancer-url: CTFd without a local instancer;
+#   - Debian 13: no HTTPS with a local instancer, in a fresh Debian virtual
+#     machine (Incus, KVM) on the runner, where setup.sh installs Docker
+#     itself. GitHub has no Debian runners, and a Debian container has no
+#     systemd or Docker daemon.
 # Every job then re-runs setup to check that re-runs are safe.
 #
 # HTTPS mode uses Pebble, Let's Encrypt's test ACME server, on the runner: the
@@ -16,7 +20,11 @@ name: Setup end-to-end
 # CTFd, the instancer and challenge instances) runs as on a real server.
 
 on:
+  # Branches only: main receives merges of branches whose run already
+  # passed, so it is not tested again (run it by hand if needed).
   push:
+    branches-ignore:
+      - main
     paths-ignore:
       - "**.md"
       - "LICENSE"
@@ -192,5 +200,59 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: setup-e2e-diagnostics-${{ matrix.id }}
+          path: ${{ runner.temp }}/diagnostics
+          if-no-files-found: ignore
+
+  setup-debian:
+    name: setup.sh --no-https (Debian 13 VM)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      E2E: .github/scripts/setup-e2e
+      VM_NAME: server
+      INSTANCER: local
+    steps:
+      - uses: actions/checkout@v7
+
+      # A sudo user, sshd and a copy of the repository; exports SERVER_IP,
+      # DOMAIN, DEPLOY_DIR and SETUP_ARGS for the VM
+      - name: Boot a Debian 13 VM
+        run: bash "$E2E/vm-start.sh" debian/13
+
+      - name: Run setup.sh
+        run: bash "$E2E/vm-run.sh" ./setup.sh $SETUP_ARGS
+
+      - name: Check the stack
+        run: bash "$E2E/vm-run.sh" bash "$E2E/check-stack.sh"
+
+      - name: Deploy a challenge through Galvanize
+        run: bash "$E2E/vm-run.sh" bash "$E2E/deploy-challenge.sh" ci-team-1
+
+      - name: Re-run setup.sh
+        run: bash "$E2E/vm-run.sh" bash "$E2E/rerun-setup.sh"
+
+      - name: Check the stack after the re-run
+        run: bash "$E2E/vm-run.sh" bash "$E2E/check-stack.sh"
+
+      - name: Deploy a challenge with the recreated SSH key
+        run: bash "$E2E/vm-run.sh" bash "$E2E/deploy-challenge.sh" ci-team-2
+
+      - name: Collect diagnostics
+        if: failure()
+        run: |
+          diag="$RUNNER_TEMP/diagnostics"
+          mkdir -p "$diag"
+          sudo incus info "$VM_NAME" --show-log > "$diag/vm-info.txt" 2>&1 || true
+          if [[ -n "${DEPLOY_DIR:-}" ]]; then
+            bash "$E2E/vm-run.sh" bash "$E2E/collect-diagnostics.sh" /tmp/diagnostics || true
+            sudo incus file pull -r "$VM_NAME/tmp/diagnostics" "$diag/" || true
+          fi
+          sudo chown -R "$USER" "$diag"
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: setup-e2e-diagnostics-debian-13
           path: ${{ runner.temp }}/diagnostics
           if-no-files-found: ignore
