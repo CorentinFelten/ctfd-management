@@ -1,6 +1,9 @@
 #!/bin/bash
 # CTFd Restore Script
-# Restores MariaDB database and CTFd uploads from backup
+# Restores the MariaDB database, CTFd uploads and the Galvanize instancer's
+# database from a backup archive (ctfd_backup_<date>.tar.gz). The config
+# archive (ctfd_config_<date>.tar.gz: .env, .secrets, traefik.env) is not
+# restored automatically: extract what you need from it by hand.
 
 set -euo pipefail
 
@@ -16,6 +19,8 @@ readonly ENV_FILE="${_DEPLOY_DIR}/.env"
 readonly DOCKER_COMPOSE_PATH="${_DEPLOY_DIR}/docker-compose.yml"
 readonly BACKUP_BASE_DIR="$(dirname "${_DEPLOY_DIR}")/backups"
 readonly CTFD_UPLOADS_PATH="${_DEPLOY_DIR}/data/CTFd/uploads"
+readonly GALVANIZE_DB_PATH="${_DEPLOY_DIR}/data/galvanize/deployer.sqlite"
+readonly GALVANIZE_CONTAINER="galvanize-instancer"
 readonly CONTAINER_NAME="maria-db"
 
 LOG_FILE="${BACKUP_BASE_DIR}/restore.log"
@@ -102,6 +107,7 @@ echo ""
 echo "WARNING: This will REPLACE all current CTFd data with the backup!"
 echo "  - Database will be dropped and restored"
 echo "  - Uploads directory will be replaced"
+echo "  - The Galvanize instancer database will be replaced (if the backup has one)"
 echo ""
 read -rp "Are you sure you want to continue? [Y/n] " -n 1 CONFIRM
 echo ""
@@ -186,7 +192,7 @@ else
     log_message "WARNING: Could not create safety dump — proceeding anyway"
 fi
 
-log_message "Step 1/2: Restoring MariaDB database..."
+log_message "Step 1/3: Restoring MariaDB database..."
 
 db_dump=""
 if [[ -f "${BACKUP_DIR}/database.sql" ]]; then
@@ -229,7 +235,7 @@ fi
 # Step 2: Restore CTFd uploads
 # ============================================================================
 
-log_message "Step 2/2: Restoring CTFd uploads..."
+log_message "Step 2/3: Restoring CTFd uploads..."
 
 UPLOADS_ARCHIVE=""
 if [[ -f "${BACKUP_DIR}/ctfd_uploads.tar" ]]; then
@@ -269,6 +275,43 @@ elif [[ -n "$UPLOADS_ARCHIVE" ]]; then
     fi
 else
     log_message "WARNING: No uploads found in backup"
+fi
+
+# ============================================================================
+# Step 3: Restore the Galvanize instancer database
+# ============================================================================
+
+log_message "Step 3/3: Restoring the Galvanize instancer database..."
+
+if [[ ! -f "${BACKUP_DIR}/galvanize/deployer.sqlite" ]]; then
+    log_message "INFO: Backup has no Galvanize database, skipping"
+elif [[ ! -d "$(dirname "${GALVANIZE_DB_PATH}")" ]]; then
+    log_message "INFO: No local Galvanize instancer on this server, skipping"
+else
+    # Galvanize must not have the database open while it is replaced
+    instancer_was_running=false
+    if docker ps --format '{{.Names}}' | grep -Fx "${GALVANIZE_CONTAINER}" >/dev/null; then
+        instancer_was_running=true
+        log_message "  Stopping ${GALVANIZE_CONTAINER}..."
+        docker stop "${GALVANIZE_CONTAINER}" >/dev/null
+    fi
+
+    if [[ -f "${GALVANIZE_DB_PATH}" ]]; then
+        GALVANIZE_DB_BACKUP="${GALVANIZE_DB_PATH}.before_restore_$(date +%Y%m%d_%H%M%S)"
+        cp -p "${GALVANIZE_DB_PATH}" "${GALVANIZE_DB_BACKUP}"
+        log_message "  Current database saved to: ${GALVANIZE_DB_BACKUP}"
+    fi
+    # The WAL and shared-memory files belong to the replaced database
+    rm -f "${GALVANIZE_DB_PATH}-wal" "${GALVANIZE_DB_PATH}-shm"
+    cp "${BACKUP_DIR}/galvanize/deployer.sqlite" "${GALVANIZE_DB_PATH}"
+    chown 1000:1000 "${GALVANIZE_DB_PATH}"
+    chmod 664 "${GALVANIZE_DB_PATH}"
+    log_message "SUCCESS: Galvanize database restored"
+
+    if [[ "${instancer_was_running}" == true ]]; then
+        docker start "${GALVANIZE_CONTAINER}" >/dev/null
+        log_message "  ${GALVANIZE_CONTAINER} started again"
+    fi
 fi
 
 # ============================================================================

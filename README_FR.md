@@ -132,11 +132,14 @@ Les déploiements antérieurs à ce changement montaient un seul thème depuis `
 
 ## Sauvegardes
 
-`setup.sh` installe une tâche cron (`--backup-schedule`, quotidienne par défaut) qui exécute `deploy/backup/backup_db.sh`. Chaque exécution exporte la base MariaDB et archive les fichiers envoyés à CTFd dans `<working-folder>/backups/ctfd_backup_<date>.tar.gz`, en y conservant les 5 archives les plus récentes. Pour en restaurer une : `deploy/backup/restore_db.sh <archive>` (ou `latest`).
+`setup.sh` installe une tâche cron (`--backup-schedule`, quotidienne par défaut) qui exécute `deploy/backup/backup_db.sh`. Chaque exécution écrit deux archives dans `<working-folder>/backups/`, en conservant les 5 plus récentes de chacune :
+
+- `ctfd_backup_<date>.tar.gz` : la base MariaDB, les fichiers envoyés à CTFd et la base de l'instancer Galvanize (déploiements et ports publiés, copiée de façon cohérente pendant que Galvanize tourne). Pour la restaurer : `deploy/backup/restore_db.sh <archive>` (ou `latest`), qui arrête Galvanize pendant le remplacement de sa base.
+- `ctfd_config_<date>.tar.gz` (chmod 600) : les fichiers `.env`, `.secrets` et `traefik.env` du déploiement, nécessaires pour reconstruire le serveur. Elle contient tous les secrets du déploiement : elle n'est donc jamais envoyée hors site (voir ci-dessous) ni restaurée automatiquement ; extrayez-en ce dont vous avez besoin avec `tar -xzf`.
 
 ### Copies hors site dans un bucket
 
-Avec `--backup-remote`, chaque archive est aussi envoyée dans un bucket, juste après sa création. L'envoi utilise [rclone](https://rclone.org/) : tout fournisseur pris en charge par rclone fonctionne, AWS S3 et les stockages compatibles S3 (Cloudflare R2, Backblaze B2, Wasabi, OVHcloud, Scaleway, MinIO…), Google Cloud Storage, Azure Blob Storage, SFTP et [bien d'autres](https://rclone.org/overview/). Le setup installe rclone et vérifie qu'il peut écrire dans le bucket avant de terminer : des identifiants erronés échouent dès le setup, et non à la première sauvegarde.
+Avec `--backup-remote`, chaque archive `ctfd_backup_*` est aussi envoyée dans un bucket, juste après sa création (l'archive de configuration reste sur le serveur). L'envoi utilise [rclone](https://rclone.org/) : tout fournisseur pris en charge par rclone fonctionne, AWS S3 et les stockages compatibles S3 (Cloudflare R2, Backblaze B2, Wasabi, OVHcloud, Scaleway, MinIO…), Google Cloud Storage, Azure Blob Storage, SFTP et [bien d'autres](https://rclone.org/overview/). Le setup installe rclone et vérifie qu'il peut écrire dans le bucket avant de terminer : des identifiants erronés échouent dès le setup, et non à la première sauvegarde.
 
 `--backup-remote` prend un `REMOTE:CHEMIN` rclone. Définissez le remote une fois avec `rclone config` (sur n'importe quelle machine) et passez le fichier obtenu avec `--backup-rclone-config` :
 
@@ -156,7 +159,7 @@ Les identifiants fournis par le serveur lui-même (rôle d'instance AWS, workloa
 - La configuration est stockée dans `deploy/backup/rclone.conf` (chmod 600, appartenant à l'utilisateur qui exécute la tâche cron). Les réglages sont conservés lors des exécutions suivantes du setup ; modifiez-les en repassant les options, ou arrêtez l'envoi avec `--no-backup-remote`.
 - Les archives envoyées de plus de 30 jours sont supprimées après chaque envoi. Changez ce délai avec `--backup-remote-retention JOURS`, ou utilisez `0` pour tout conserver (par exemple pour laisser les règles de cycle de vie du bucket gérer l'expiration).
 - Un envoi échoué conserve l'archive locale et fait échouer la sauvegarde, avec le détail dans `<working-folder>/backups/backup.log` et le journal du cron.
-- Les archives contiennent toute la base CTFd, flags et empreintes de mots de passe compris. Pour les chiffrer avant qu'elles ne quittent le serveur, quel que soit le fournisseur, faites pointer `--backup-remote` vers un remote rclone [`crypt`](https://rclone.org/crypt/) qui enveloppe le bucket.
+- Les archives envoyées contiennent toute la base CTFd, flags et empreintes de mots de passe compris. Pour les chiffrer avant qu'elles ne quittent le serveur, quel que soit le fournisseur, faites pointer `--backup-remote` vers un remote rclone [`crypt`](https://rclone.org/crypt/) qui enveloppe le bucket.
 
 Pour restaurer depuis le bucket, par exemple sur un nouveau serveur après y avoir lancé le setup avec le même `--backup-remote` :
 
