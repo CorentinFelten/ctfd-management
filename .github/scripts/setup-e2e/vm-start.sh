@@ -30,8 +30,13 @@ wait_for() {
 
 log "Installing Incus"
 sudo apt-get update -qq
+# Ubuntu's incus package does not pull in QEMU or the UEFI firmware its VMs
+# boot with; Incus only enables VMs if QEMU is there when the daemon starts
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq qemu-system-x86 qemu-utils ovmf >/dev/null
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq incus >/dev/null
+sudo systemctl restart incus
 sudo incus admin init --minimal
+sudo incus info | grep -E 'driver:|driver_version:' || true
 # Docker on the runner sets the FORWARD policy to DROP, which also drops the
 # VM's traffic through the Incus bridge (no internet in the VM otherwise)
 sudo iptables -P FORWARD ACCEPT
