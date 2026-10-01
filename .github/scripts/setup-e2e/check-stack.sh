@@ -42,7 +42,7 @@ if [[ "$SCHEME" == https ]]; then
     done
     pass "The certificate covers ${DOMAIN} and *.${DOMAIN}"
 
-    read -r code location < <(fetch "http://${DOMAIN}/" -o /dev/null -w '%{http_code} %{redirect_url}')
+    read -r code location < <(fetch "http://${DOMAIN}/" -o /dev/null -w '%{http_code} %{redirect_url}\n')
     [[ "$code" =~ ^30[1278]$ && "$location" == "https://${DOMAIN}/"* ]] \
         || fail "http://${DOMAIN}/ should redirect to HTTPS (got HTTP $code to '$location')"
     pass "Plain HTTP redirects to HTTPS"

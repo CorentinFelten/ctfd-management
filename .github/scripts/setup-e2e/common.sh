@@ -10,6 +10,9 @@
 
 set -euo pipefail
 
+# set -e exits silently; say which check died unexpectedly
+trap 'echo "::error file=${BASH_SOURCE[0]},line=${LINENO}::Unexpected failure: ${BASH_COMMAND}" >&2' ERR
+
 : "${DEPLOY_DIR:?DEPLOY_DIR must be set}"
 : "${SERVER_IP:?SERVER_IP must be set}"
 DOMAIN="${DOMAIN:-$SERVER_IP}"
