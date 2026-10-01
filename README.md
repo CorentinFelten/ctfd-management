@@ -507,6 +507,10 @@ All secrets are written to `<deploy-dir>/.secrets` (chmod 600) and to `.env`.
 
 DNS provider credentials (for wildcard TLS certificates) are written to `<deploy-dir>/traefik.env` (chmod 600) instead. It is the only env file passed to the Traefik container, so Traefik never sees the database passwords, CTFd's `SECRET_KEY` or the Zync JWT secret. Deployments made before this change kept their DNS credentials in `.env`: re-running `setup.sh` copies them to `traefik.env`, after which they can be removed from `.env`.
 
+**How setup writes the configuration.** `deploy/.env` is the source of the deployment settings: setup works out every value first (from the options, the existing `.env` and `.secrets`), then writes them to `.env` in a single pass. Keys it does not manage, such as ones you add by hand, are kept. Docker Compose reads everything else from `.env` itself, so `docker-compose.yml` is never edited. The two generated YAML files, the Galvanize config and Traefik's static config, are each filled in with a single `yq` call from the same values. In `config/traefik/traefik.yml`, setup only replaces the `__BASE_DOMAIN__`, `__ACME_EMAIL__` and `__DNS_PROVIDER__` placeholders, so other values you change in that template (for example `caServer`, to use Let's Encrypt's staging server) are kept. `COMPOSE_PROJECT_NAME` is taken from the environment, else from `.env`, else `ctfd_infra`.
+
+The Traefik dashboard port (`9090`) is published on all interfaces for HTTP-only deployments, where the dashboard is enabled, and only on the loopback interface with HTTPS, where it is disabled. This is the `TRAEFIK_DASHBOARD_BIND` value in `.env`.
+
 > **Re-running setup is safe**: if secrets already exist in `.env`, they are preserved. Only missing secrets are generated, so running `setup.sh` again will not break existing containers.
 
 ## Continuous Integration

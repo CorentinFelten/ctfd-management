@@ -5,33 +5,62 @@
 [[ -n "${_LIB_ENV_LOADED:-}" ]] && return 0
 readonly _LIB_ENV_LOADED=1
 
-# ── Write or update a key in a KEY=VALUE env file ───────────────────────────
+# ── Write or update keys in a KEY=VALUE env file ────────────────────────────
 
-_write_env_key() {
-    local env_file="$1" key="$2" value="$3"
+# _write_env_keys FILE KEY VALUE [KEY VALUE...]
+#   Sets every KEY in one pass over FILE: existing KEY= lines are updated in
+#   place, other lines are kept as they are (including keys added by hand),
+#   and keys not in FILE yet are appended in the order given. Values must not
+#   contain newlines.
+_write_env_keys() {
+    local env_file="$1"; shift
+    (( $# % 2 == 0 )) || { log_error "_write_env_keys: KEY VALUE pairs expected"; return 1; }
 
-    if grep -q "^${key}=" "$env_file"; then
-        # Pass the value via the environment (ENVIRON), not `-v v=`, so awk does
-        # not interpret backslash escapes inside the value (e.g. a credential
-        # containing a literal backslash would otherwise be mangled).
-        # umask 077: the temp copy holds secrets too
-        ( umask 077
-          _ENV_VALUE="$value" awk -v k="$key" '{
-              if (index($0, k "=") == 1) print k "=" ENVIRON["_ENV_VALUE"]
-              else print
-          }' "$env_file" > "${env_file}.tmp" )
-        # cat (not mv) keeps the target's inode, owner and permissions
-        cat "${env_file}.tmp" > "$env_file"
-        rm -f "${env_file}.tmp"
-    else
-        printf '%s=%s\n' "$key" "$value" >> "$env_file"
-    fi
+    # Values go through a file read by awk, not `-v`, so awk does not
+    # interpret backslash escapes in them. umask 077: both files hold secrets.
+    local updates="${env_file}.updates" tmp="${env_file}.tmp"
+    (
+        umask 077
+        : > "$updates"
+        while (( $# )); do
+            printf '%s=%s\n' "$1" "$2" >> "$updates"
+            shift 2
+        done
+        awk '
+            NR == FNR {
+                i = index($0, "="); k = substr($0, 1, i - 1)
+                if (!(k in value)) order[++n] = k
+                value[k] = substr($0, i + 1)
+                next
+            }
+            {
+                i = index($0, "=")
+                if (i > 1) {
+                    k = substr($0, 1, i - 1)
+                    if (k in value) {
+                        if (!(k in done)) print k "=" value[k]
+                        done[k] = 1
+                        next
+                    }
+                }
+                print
+            }
+            END {
+                for (j = 1; j <= n; j++)
+                    if (!(order[j] in done)) print order[j] "=" value[order[j]]
+            }
+        ' "$updates" "$env_file" > "$tmp"
+    )
+    # cat (not mv) keeps the target's inode, owner and permissions
+    cat "$tmp" > "$env_file"
+    rm -f "$tmp" "$updates"
 }
 
-# ── Write or update a key in the deployment .env file ───────────────────────
+# ── Write or update keys in the deployment .env file ─────────────────────────
 
-setup_env_key() {
-    local key="$1" value="$2"
+# setup_env_keys KEY VALUE [KEY VALUE...] — creates .env from the template
+# for the deployment mode if needed, then sets all the keys in one pass
+setup_env_keys() {
     local env_file="${CONFIG[DEPLOY_DIR]}/.env"
 
     if [[ ! -f "$env_file" ]]; then
@@ -39,7 +68,14 @@ setup_env_key() {
         cp "${SCRIPT_DIR}/config/${CONFIG[DOCKER_ENV_FILE]}" "$env_file"
     fi
 
-    _write_env_key "$env_file" "$key" "$value"
+    _write_env_keys "$env_file" "$@"
+}
+
+setup_env_key() { setup_env_keys "$1" "$2"; }
+
+# env_file_value FILE KEY — value of KEY in FILE, quotes stripped (empty if absent)
+env_file_value() {
+    grep "^${2}=" "$1" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d "'\"\r" || true
 }
 
 # ── Traefik's private env file ──────────────────────────────────────────────
@@ -64,9 +100,10 @@ ensure_traefik_env_file() {
     chmod 600 "$env_file"
 }
 
-setup_traefik_env_key() {
+# setup_traefik_env_keys KEY VALUE [KEY VALUE...]
+setup_traefik_env_keys() {
     ensure_traefik_env_file
-    _write_env_key "$(traefik_env_file)" "$1" "$2"
+    _write_env_keys "$(traefik_env_file)" "$@"
 }
 
 # ── Read a value from the .env file (used by backup/restore) ────────────────

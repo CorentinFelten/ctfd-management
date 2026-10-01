@@ -32,7 +32,5 @@ create_and_set_owner() {
         chmod -R o+w "$deploy_dir/data/galvanize"
     fi
 
-    setup_env_key DATA_DIR "./data"
-
     log_success "Directories created and ownership set"
 }

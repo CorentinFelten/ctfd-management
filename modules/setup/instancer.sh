@@ -67,7 +67,8 @@ setup_ansible_user() {
     # Applied on every run, including when the key is kept: re-runs chown the
     # whole deploy dir to the invoking user, while the instancer container
     # reads the key as UID 1000.
-    setup_env_key SSH_KEY_PATH "$private_key_path"
+    # Written to .env with the other settings by install_ctfd
+    CONFIG[SSH_KEY_PATH]="$private_key_path"
     chown 1000:1000 "$private_key_path"
     chmod 600 "$private_key_path"
 
@@ -97,27 +98,31 @@ setup_ansible_user() {
 configure_instancer() {
     local config_path="${CONFIG[DEPLOY_DIR]}/data/galvanize/config.yaml"
 
-    local compose_project_name
-    compose_project_name="$(grep '^COMPOSE_PROJECT_NAME=' "${CONFIG[DEPLOY_DIR]}/.env" 2>/dev/null \
-        | head -n1 | cut -d= -f2- | tr -d "'\"\r")"
-    compose_project_name="${compose_project_name:-ctfd_infra}"
-    # Dedicated network shared only by challenge instances and Traefik
-    local challenge_network="${compose_project_name}_challenges"
-
-    yq -i ".auth.jwt_secret = \"${CONFIG[JWT_SECRET_KEY]}\"" "$config_path"
-    yq -i ".instancer.ansible.user = \"${ANSIBLE_USER}\"" "$config_path"
-    yq -i ".instancer.ansible.inventory = \"${CONFIG[DOMAIN]},\"" "$config_path"
     local instancer_host="${CONFIG[DOMAIN]}"
     if is_ip_address "$instancer_host"; then
         # sslip.io requires dashes instead of colons for IPv6 addresses
         instancer_host="${instancer_host//:/-}.sslip.io"
         log_info "IP address detected — using sslip.io wildcard DNS: ${instancer_host}"
     fi
-    yq -i ".instancer.instancer_host = \"${instancer_host}\"" "$config_path"
-    yq -i ".instancer.redis.addr = \"redis:6379\"" "$config_path"
-    # CTFd uses Redis db 0; keep Galvanize's job queue in its own db
-    yq -i ".instancer.redis.db = 1" "$config_path"
-    yq -i ".instancer.extra_deployment_parameters.traefik_network = \"${challenge_network}\"" "$config_path"
+
+    # One pass over the file. Values go through the environment (strenv), so
+    # they are never parsed as part of the yq expression.
+    #   redis db 1: CTFd uses db 0 on the shared Redis
+    #   traefik_network: shared only by challenge instances and Traefik
+    G_JWT_SECRET="${CONFIG[JWT_SECRET_KEY]}" \
+    G_ANSIBLE_USER="$ANSIBLE_USER" \
+    G_INVENTORY="${CONFIG[DOMAIN]}," \
+    G_INSTANCER_HOST="$instancer_host" \
+    G_TRAEFIK_NETWORK="${CONFIG[CHALLENGE_NETWORK]}" \
+    yq -i '
+        .auth.jwt_secret = strenv(G_JWT_SECRET) |
+        .instancer.ansible.user = strenv(G_ANSIBLE_USER) |
+        .instancer.ansible.inventory = strenv(G_INVENTORY) |
+        .instancer.instancer_host = strenv(G_INSTANCER_HOST) |
+        .instancer.redis.addr = "redis:6379" |
+        .instancer.redis.db = 1 |
+        .instancer.extra_deployment_parameters.traefik_network = strenv(G_TRAEFIK_NETWORK)
+    ' "$config_path"
 
     log_success "Local instancer setup complete"
 }
