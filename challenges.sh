@@ -3,8 +3,8 @@
 # Builds, ingests, syncs, and manages CTF challenges for CTFd.
 #
 # This script is meant to be invoked from the WORKING directory, not from
-# inside the infra/ folder.  It resolves its own location to source the
-# shared libraries and challenge sub-modules.
+# inside the ctfd-management/ folder. It resolves its own location to source
+# the shared libraries and challenge sub-modules.
 
 set -euo pipefail
 

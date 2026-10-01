@@ -32,8 +32,8 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 
 1. **Cloner ce dépôt** :
    ```bash
-   git clone https://github.com/CorentinFelten/infra
-   cd infra
+   git clone https://github.com/CorentinFelten/ctfd-management
+   cd ctfd-management
    ```
 
 2. **Exécuter le script d'installation et suivre les instructions** :

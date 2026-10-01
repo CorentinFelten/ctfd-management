@@ -32,8 +32,8 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 
 1. **Clone this repository**:
    ```bash
-   git clone https://github.com/CorentinFelten/infra
-   cd infra
+   git clone https://github.com/CorentinFelten/ctfd-management
+   cd ctfd-management
    ```
 
 2. **Run the installation script and follow the instructions**:
