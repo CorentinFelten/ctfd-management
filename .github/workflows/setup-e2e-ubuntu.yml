@@ -22,6 +22,10 @@ on:
         description: "Branch, tag or commit of galvanize_repository"
         type: string
         default: ""
+      galvanize_without_redis:
+        description: "Local instancer jobs also run Galvanize without Redis for a while (galvanize-without-redis.sh)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -259,6 +263,13 @@ jobs:
       - name: Deploy a challenge through Galvanize
         if: matrix.instancer == 'local'
         run: bash "$E2E/deploy-challenge.sh" ci-team-1
+
+      # Expiry without the job queue, max_concurrent_ansible, the randomized
+      # port range and a TCP challenge without traefik_network; the original
+      # config, with Redis, is restored before the re-run
+      - name: Run Galvanize without Redis
+        if: inputs.galvanize_without_redis && matrix.instancer == 'local'
+        run: bash "$E2E/galvanize-without-redis.sh"
 
       - name: Re-run setup.sh
         run: bash "$E2E/rerun-setup.sh"
