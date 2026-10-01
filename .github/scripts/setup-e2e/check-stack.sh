@@ -1,12 +1,26 @@
 #!/usr/bin/env bash
-# Checks a deployment made by setup.sh with a local instancer, in no-HTTPS or
-# HTTPS mode: containers, TLS, Traefik routing, generated files, Ansible SSH
-# access, data ownership, backups.
+# Checks a deployment made by setup.sh, in no-HTTPS or HTTPS mode, with a
+# local, external or no instancer: containers, TLS, Traefik routing,
+# generated files, Ansible SSH access, data ownership, backups.
+#
+# Besides common.sh's variables:
+#   INSTANCER      expected instancer mode: local (default), none or external
+#   INSTANCER_URL  the --instancer-url given to setup.sh (external mode)
+#   FRESH_INSTALL  false when the deployment previously had a local instancer:
+#                  its files are then legitimately left behind
 
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
+INSTANCER="${INSTANCER:-local}"
+FRESH_INSTALL="${FRESH_INSTALL:-true}"
+case "$INSTANCER" in
+    local|none) ;;
+    external) : "${INSTANCER_URL:?INSTANCER_URL must be set for an external instancer}" ;;
+    *) fail "Unknown INSTANCER mode: $INSTANCER" ;;
+esac
+
 instancer_domain="instancer.${INSTANCER_HOST}"
-echo "Mode: ${SCHEME}, domain: ${DOMAIN}, server: ${SERVER_IP}"
+echo "Mode: ${SCHEME}, instancer: ${INSTANCER}, domain: ${DOMAIN}, server: ${SERVER_IP}"
 
 # ── Containers ───────────────────────────────────────────────────────────────
 
@@ -17,10 +31,17 @@ container_state() {
 }
 is_healthy() { [[ "$(container_state "$1")" == healthy ]]; }
 
-for c in ctfd maria-db redis galvanize-instancer; do
+healthy_containers=(ctfd maria-db redis)
+[[ "$INSTANCER" == local ]] && healthy_containers+=(galvanize-instancer)
+for c in "${healthy_containers[@]}"; do
     wait_for "$c to be healthy" 300 is_healthy "$c"
     pass "$c is healthy"
 done
+if [[ "$INSTANCER" != local ]]; then
+    ! docker inspect galvanize-instancer >/dev/null 2>&1 \
+        || fail "A galvanize-instancer container exists without a local instancer"
+    pass "No instancer container"
+fi
 [[ "$(container_state traefik)" == running ]] || fail "traefik is not running"
 pass "traefik is running"
 
@@ -65,14 +86,20 @@ fetch "${SCHEME}://${DOMAIN}/" -fL | grep -i "ctfd" >/dev/null \
     || fail "CTFd is not served at ${SCHEME}://${DOMAIN}/"
 pass "CTFd answers at ${SCHEME}://${DOMAIN}/"
 
-health="$(fetch "${SCHEME}://${instancer_domain}/health" -f)" \
-    || fail "Galvanize /health is not reachable through Traefik at ${SCHEME}://${instancer_domain}"
-[[ "$(jq -r .status <<< "$health")" == ok ]] || fail "Unexpected /health response: $health"
-pass "Galvanize answers at ${SCHEME}://${instancer_domain}/health"
+if [[ "$INSTANCER" == local ]]; then
+    health="$(fetch "${SCHEME}://${instancer_domain}/health" -f)" \
+        || fail "Galvanize /health is not reachable through Traefik at ${SCHEME}://${instancer_domain}"
+    [[ "$(jq -r .status <<< "$health")" == ok ]] || fail "Unexpected /health response: $health"
+    pass "Galvanize answers at ${SCHEME}://${instancer_domain}/health"
 
-code="$(fetch "${SCHEME}://${instancer_domain}/metrics" -o /dev/null -w '%{http_code}')"
-[[ "$code" == 404 ]] || fail "Galvanize /metrics should not be routed by Traefik (got HTTP $code)"
-pass "Galvanize /metrics is not routed"
+    code="$(fetch "${SCHEME}://${instancer_domain}/metrics" -o /dev/null -w '%{http_code}')"
+    [[ "$code" == 404 ]] || fail "Galvanize /metrics should not be routed by Traefik (got HTTP $code)"
+    pass "Galvanize /metrics is not routed"
+else
+    code="$(fetch "${SCHEME}://${instancer_domain}/health" -o /dev/null -w '%{http_code}')"
+    [[ "$code" == 404 ]] || fail "${instancer_domain} should not be routed without a local instancer (got HTTP $code)"
+    pass "Nothing is routed at ${instancer_domain}"
+fi
 
 # ── Generated files ─────────────────────────────────────────────────────────
 
@@ -91,9 +118,21 @@ expect_env() {
 expect_env BASE_DOMAIN       "$DOMAIN"
 expect_env CTFD_URL          "${SCHEME}://${DOMAIN}"
 expect_env INSTANCER_DOMAIN  "$instancer_domain"
-expect_env ZYNC_DEPLOYER_URL "${SCHEME}://${instancer_domain}"
-expect_env INSTANCER_MODE    local
-expect_env COMPOSE_PROFILES  instancer
+case "$INSTANCER" in
+    local)
+        expect_env ZYNC_DEPLOYER_URL "${SCHEME}://${instancer_domain}"
+        expect_env INSTANCER_MODE    local
+        expect_env COMPOSE_PROFILES  instancer ;;
+    none)
+        # The default instancer address, for a Galvanize deployed separately later
+        expect_env ZYNC_DEPLOYER_URL "${SCHEME}://${instancer_domain}"
+        expect_env INSTANCER_MODE    none
+        expect_env COMPOSE_PROFILES  "" ;;
+    external)
+        expect_env ZYNC_DEPLOYER_URL "$INSTANCER_URL"
+        expect_env INSTANCER_MODE    external
+        expect_env COMPOSE_PROFILES  "" ;;
+esac
 if [[ "$SCHEME" == https ]]; then
     expect_env TRAEFIK_STATIC_CONFIG ./traefik-config/traefik.yml
 else
@@ -127,25 +166,33 @@ if [[ "$SCHEME" == https ]]; then
     pass "docker-compose.yml does not publish the dashboard port"
 fi
 
-galvanize_config="$DEPLOY_DIR/data/galvanize/config.yaml"
-expect_yaml() {
-    local path="$1" want="$2" got
-    got="$(sudo yq -r "$path" "$galvanize_config")"
-    [[ "$got" == "$want" ]] || fail "Galvanize config $path is '$got', expected '$want'"
-}
-expect_yaml .auth.jwt_secret                                       "$(env_value ZYNC_JWT_SECRET)"
-expect_yaml .instancer.ansible.inventory                           "${DOMAIN},"
-expect_yaml .instancer.ansible.user                                ansible-user
-expect_yaml .instancer.instancer_host                              "$INSTANCER_HOST"
-expect_yaml .instancer.redis.db                                    1
-expect_yaml .instancer.extra_deployment_parameters.traefik_network ctfd_infra_challenges
-pass "Galvanize config is filled in"
+if [[ "$INSTANCER" == local ]]; then
+    galvanize_config="$DEPLOY_DIR/data/galvanize/config.yaml"
+    expect_yaml() {
+        local path="$1" want="$2" got
+        got="$(sudo yq -r "$path" "$galvanize_config")"
+        [[ "$got" == "$want" ]] || fail "Galvanize config $path is '$got', expected '$want'"
+    }
+    expect_yaml .auth.jwt_secret                                       "$(env_value ZYNC_JWT_SECRET)"
+    expect_yaml .instancer.ansible.inventory                           "${DOMAIN},"
+    expect_yaml .instancer.ansible.user                                ansible-user
+    expect_yaml .instancer.instancer_host                              "$INSTANCER_HOST"
+    expect_yaml .instancer.redis.db                                    1
+    expect_yaml .instancer.extra_deployment_parameters.traefik_network ctfd_infra_challenges
+    pass "Galvanize config is filled in"
 
-for pb in config/galvanize/playbooks/*.yaml; do
-    sudo cmp -s "$pb" "$DEPLOY_DIR/data/galvanize/playbooks/$(basename "$pb")" \
-        || fail "Playbook $(basename "$pb") was not copied to the deployment"
-done
-pass "Galvanize playbooks are deployed"
+    for pb in config/galvanize/playbooks/*.yaml; do
+        sudo cmp -s "$pb" "$DEPLOY_DIR/data/galvanize/playbooks/$(basename "$pb")" \
+            || fail "Playbook $(basename "$pb") was not copied to the deployment"
+    done
+    pass "Galvanize playbooks are deployed"
+elif [[ "$FRESH_INSTALL" == true ]]; then
+    [[ ! -e "$DEPLOY_DIR/data/galvanize" ]] || fail "data/galvanize was created without a local instancer"
+    [[ ! -e "$DEPLOY_DIR/ansible-ssh" ]]    || fail "ansible-ssh/ was created without a local instancer"
+    ! id ansible-user >/dev/null 2>&1        || fail "ansible-user was created without a local instancer"
+    [[ -z "$(env_value GALVANIZE_CONFIG_PATH)" ]] || fail ".env has GALVANIZE_CONFIG_PATH without a local instancer"
+    pass "No Galvanize data, Ansible user or SSH key without a local instancer"
+fi
 
 # ── Data ownership ──────────────────────────────────────────────────────────
 # Re-runs must not re-own the containers' data (MariaDB then cannot read its
@@ -161,14 +208,16 @@ pass "data/mysql and data/redis are left to their containers"
 
 # ── Ansible SSH access (what Galvanize uses to deploy challenges) ──────────
 
-section "Ansible SSH"
+if [[ "$INSTANCER" == local ]]; then
+    section "Ansible SSH"
 
-# Same target as the Galvanize inventory, so a domain must resolve here too
-sudo ssh -i "$DEPLOY_DIR/ansible-ssh/ansible_rsa" \
-    -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
-    "ansible-user@${DOMAIN}" docker ps >/dev/null \
-    || fail "ansible-user cannot SSH to ${DOMAIN} with the generated key and run docker"
-pass "ansible-user can SSH to ${DOMAIN} with the generated key and use Docker"
+    # Same target as the Galvanize inventory, so a domain must resolve here too
+    sudo ssh -i "$DEPLOY_DIR/ansible-ssh/ansible_rsa" \
+        -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+        "ansible-user@${DOMAIN}" docker ps >/dev/null \
+        || fail "ansible-user cannot SSH to ${DOMAIN} with the generated key and run docker"
+    pass "ansible-user can SSH to ${DOMAIN} with the generated key and use Docker"
+fi
 
 # ── Backups ─────────────────────────────────────────────────────────────────
 
