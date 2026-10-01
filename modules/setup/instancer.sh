@@ -7,6 +7,12 @@ readonly _SETUP_INSTANCER_LOADED=1
 
 readonly ANSIBLE_USER="ansible-user"
 
+# instancer_deployed_locally — true unless --instancer-url (external) or
+# --no-instancer was given, i.e. when Galvanize runs in this compose stack.
+instancer_deployed_locally() {
+    [[ -z "${CONFIG[INSTANCER_URL]:-}" && -z "${CONFIG[NO_INSTANCER]:-}" ]]
+}
+
 setup_ansible_user() {
     local ssh_key_dir="${CONFIG[DEPLOY_DIR]}/ansible-ssh"
     local private_key_path="$ssh_key_dir/ansible_rsa"
