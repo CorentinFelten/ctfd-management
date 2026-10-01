@@ -111,14 +111,14 @@ instance_host="$(sed -E 's|^https?://([^/:]+).*|\1|' <<< "$connection_info")"
 
 instance_serves_nginx() {
     fetch "https://${instance_host}/" -f 2>/dev/null \
-        | grep -q "Welcome to nginx"
+        | grep "Welcome to nginx" >/dev/null
 }
 wait_for "Traefik to route https://${instance_host}/" 60 instance_serves_nginx
 pass "https://${instance_host}/ serves the challenge through Traefik"
 
 project="${instance_host%%.*}"
 docker network inspect ctfd_infra_challenges \
-    -f '{{range .Containers}}{{.Name}}{{"\n"}}{{end}}' | grep -q "^${project}-" \
+    -f '{{range .Containers}}{{.Name}}{{"\n"}}{{end}}' | grep "^${project}-" >/dev/null \
     || fail "The instance is not attached to the challenges network"
 pass "The instance is on the challenges network"
 
