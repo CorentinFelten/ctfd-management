@@ -610,6 +610,8 @@ Chaque job ensuite :
 
 En cas d'échec, les logs des conteneurs et les configurations expurgées sont publiés dans l'artefact `setup-e2e-diagnostics-<job>`.
 
+**Tester une version de Galvanize non publiée.** Une exécution manuelle (onglet Actions → Setup end-to-end → Run workflow) peut tester une version de Galvanize pas encore publiée, comme une branche de fork contenant un correctif destiné à l'amont : renseignez `galvanize_repository` (par ex. `CorentinFelten/galvanize`) et `galvanize_ref` (une branche, un tag ou un commit). Les jobs Ubuntu avec instancer local construisent alors l'image de cette version et la déploient avec ses propres playbooks au lieu de ceux fournis, de sorte que les déploiements exercent le code testé. setup.sh n'est pas modifié : seuls le modèle compose et les playbooks du dépôt cloné sont redirigés. En ligne de commande : `gh workflow run setup-e2e.yml --ref <branche> -f galvanize_repository=CorentinFelten/galvanize -f galvanize_ref=<branche-galvanize>`.
+
 ---
 
 Ces scripts ont initialement été développés pour l'équipe PolyCyber afin d'automatiser l'installation et la gestion des serveurs CTFd. Ils ont été conçus pour fonctionner spécifiquement avec l'instancer [Galvanize](https://github.com/28Pollux28/galvanize) et le plugin [Zync](https://github.com/28Pollux28/zync).
