@@ -71,11 +71,6 @@ if [[ "$SCHEME" == https ]]; then
     fetch "https://${DOMAIN}/" -o /dev/null -D - | grep -i '^strict-transport-security:' >/dev/null \
         || fail "CTFd responses have no Strict-Transport-Security header"
     pass "HSTS header is set"
-
-    if curl -s -o /dev/null --max-time 5 "http://${SERVER_IP}:9090/"; then
-        fail "The Traefik dashboard port 9090 is open in HTTPS mode"
-    fi
-    pass "Traefik dashboard port 9090 is closed"
 fi
 
 # ── Routing through Traefik ─────────────────────────────────────────────────
@@ -104,6 +99,23 @@ else
     code="$(fetch "${SCHEME}://${instancer_domain}/health" -o /dev/null -w '%{http_code}')"
     [[ "$code" == 404 ]] || fail "${instancer_domain} should not be routed without a local instancer (got HTTP $code)"
     pass "Nothing is routed at ${instancer_domain}"
+fi
+
+# ── Traefik dashboard ───────────────────────────────────────────────────────
+# Unauthenticated, so never reachable from outside; the HTTP-only config
+# serves it on the loopback interface (SSH tunnel)
+
+section "Traefik dashboard"
+
+if curl -s -o /dev/null --max-time 5 "http://${SERVER_IP}:9090/"; then
+    fail "The Traefik dashboard port 9090 is reachable at ${SERVER_IP}"
+fi
+pass "Port 9090 is not reachable at ${SERVER_IP}"
+
+if [[ "$SCHEME" == http ]]; then
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:9090/dashboard/")"
+    [[ "$code" == 200 ]] || fail "The Traefik dashboard does not answer on 127.0.0.1:9090 (HTTP $code)"
+    pass "The Traefik dashboard answers on 127.0.0.1:9090"
 fi
 
 # ── Generated files ─────────────────────────────────────────────────────────
@@ -140,11 +152,10 @@ case "$INSTANCER" in
 esac
 if [[ "$SCHEME" == https ]]; then
     expect_env TRAEFIK_STATIC_CONFIG  ./traefik-config/traefik.yml
-    expect_env TRAEFIK_DASHBOARD_BIND 127.0.0.1:9090
 else
     expect_env TRAEFIK_STATIC_CONFIG  ./traefik-config/traefik-local.yml
-    expect_env TRAEFIK_DASHBOARD_BIND 9090
 fi
+expect_env TRAEFIK_DASHBOARD_BIND 127.0.0.1:9090
 expect_env DATA_DIR ./data
 pass ".env has the expected ${SCHEME} settings"
 

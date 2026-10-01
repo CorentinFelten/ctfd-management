@@ -60,9 +60,9 @@ services:
     ports:
       - "80:80"
       - "${HTTPS_PORT:-443}:443"
-      # Dashboard: setup.sh publishes it on all interfaces for HTTP-only
-      # deployments (TRAEFIK_DASHBOARD_BIND=9090); with HTTPS it is disabled
-      # and the port only bound to the loopback interface
+      # Dashboard (HTTP-only deployments; disabled with HTTPS): it has no
+      # authentication, so it is only published on the loopback interface.
+      # Reach it with an SSH tunnel: ssh -L 9090:127.0.0.1:9090 <server>
       - "${TRAEFIK_DASHBOARD_BIND:-127.0.0.1:9090}:9090"
     volumes:
       # Static config — swap traefik-local.yml for local/IP deployments

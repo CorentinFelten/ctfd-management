@@ -209,13 +209,14 @@ install_ctfd() {
     local compose_profiles=""
     [[ "$use_local_instancer" == "true" ]] && compose_profiles="instancer"
 
-    # Traefik static config, and where the dashboard port is published: the
-    # HTTP-only config serves the dashboard on :9090; the HTTPS one disables
-    # it, so its port is only bound to the loopback interface.
+    # Traefik static config. The HTTP-only one serves Traefik's dashboard on
+    # :9090 (the HTTPS one disables it). It has no authentication, so its port
+    # is only published on the loopback interface, in both modes: reach it
+    # with an SSH tunnel (ssh -L 9090:127.0.0.1:9090 <server>). Written on
+    # every run, so .env files from older setups (all interfaces) are fixed.
     local traefik_static_config="./traefik-config/traefik.yml" dashboard_bind="127.0.0.1:9090"
     if [[ "${CONFIG[NO_HTTPS]:-}" == "true" ]]; then
         traefik_static_config="./traefik-config/traefik-local.yml"
-        dashboard_bind="9090"
         log_info "HTTPS disabled — using the HTTP-only Traefik config"
     else
         log_info "HTTPS enabled — using the Let's Encrypt Traefik config"

@@ -509,7 +509,7 @@ DNS provider credentials (for wildcard TLS certificates) are written to `<deploy
 
 **How setup writes the configuration.** `deploy/.env` is the source of the deployment settings: setup works out every value first (from the options, the existing `.env` and `.secrets`), then writes them to `.env` in a single pass. Keys it does not manage, such as ones you add by hand, are kept. Docker Compose reads everything else from `.env` itself, so `docker-compose.yml` is never edited. The two generated YAML files, the Galvanize config and Traefik's static config, are each filled in with a single `yq` call from the same values. In `config/traefik/traefik.yml`, setup only replaces the `__BASE_DOMAIN__`, `__ACME_EMAIL__` and `__DNS_PROVIDER__` placeholders, so other values you change in that template (for example `caServer`, to use Let's Encrypt's staging server) are kept. `COMPOSE_PROJECT_NAME` is taken from the environment, else from `.env`, else `ctfd_infra`.
 
-The Traefik dashboard port (`9090`) is published on all interfaces for HTTP-only deployments, where the dashboard is enabled, and only on the loopback interface with HTTPS, where it is disabled. This is the `TRAEFIK_DASHBOARD_BIND` value in `.env`.
+The Traefik dashboard (HTTP-only deployments; it is disabled with HTTPS) has no authentication, so its port (`9090`) is only published on the server's loopback interface (`TRAEFIK_DASHBOARD_BIND` in `.env`). Reach it through an SSH tunnel: `ssh -L 9090:127.0.0.1:9090 <server>`, then open `http://localhost:9090/dashboard/`.
 
 > **Re-running setup is safe**: if secrets already exist in `.env`, they are preserved. Only missing secrets are generated, so running `setup.sh` again will not break existing containers.
 
