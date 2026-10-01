@@ -38,11 +38,13 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 
 2. **Run the installation script and follow the instructions**:
    ```bash
-   ./setup.sh --domain <your-domain.com>
+   ./setup.sh --domain <your-domain.com> --acme-email <you@example.com> \
+     --admin-name <admin> --admin-email <admin@example.com> --user-mode teams --ctf-name "<Event name>"
    ```
+   The script asks for the first admin's password at the start, then runs unattended. CTFd goes live already set up (see [First admin and CTFd setup](#first-admin-and-ctfd-setup)).
 
 3. **Go to the configured server URL**
-   - Configure the CTF event
+   - Log in with the admin account created by the script
    - Navigate to the admin configuration panel: `Admin Panel` --> `Plugins` --> `Zync Config`
    - Check the Galvanize instancer URL and JWT secret (both are pre-filled by the setup, see below)
 
@@ -53,6 +55,12 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 | Option                   | Description                                                                      | Required |
 |--------------------------|----------------------------------------------------------------------------------|----------|
 | `--domain domain/IP`     | URL/domain of your CTFd server                                                   | ✅ Yes   |
+| `--admin-name NAME`      | First admin's user name (the password is asked for during the run)              | ✅ New deployment |
+| `--admin-email EMAIL`    | First admin's email address                                                      | ✅ New deployment |
+| `--user-mode MODE`       | `teams` or `users`                                                               | ✅ New deployment |
+| `--ctf-name NAME`        | Event name (default: "CTFd")                                                     | ❌ No    |
+| `--ctf-description TEXT` | Event description                                                                | ❌ No    |
+| `--team-size N`          | Maximum team size (teams mode)                                                   | ❌ No    |
 | `--working-folder DIR`   | Working directory (default: your home directory, `/root` when run as root)     | ❌ No    |
 | `--theme SOURCE`         | Install a custom theme: a folder or a Git URL (`#ref` for a branch/tag). Repeatable | ❌ No    |
 | `--remove-theme NAME`    | Remove an installed custom theme. Repeatable                                     | ❌ No    |
@@ -77,6 +85,8 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 > **Unattended runs (`--yes`)**: every prompt takes its default answer. On a re-run this recreates the Ansible SSH key pair (the instancer container is recreated to pick it up). The DNS provider wizard cannot ask for credentials, so for HTTPS deployments they must already be in `deploy/traefik.env`, or be passed in the root environment (`sudo CF_DNS_API_TOKEN=... ./setup.sh ... --yes`). Without `--yes`, a prompt with no terminal attached (CI, cron) fails with a message pointing to `--yes`.
 
 ## Installation Examples
+
+The first-run options (`--admin-name`, `--admin-email`, `--user-mode`) are needed on a new deployment and left out of the examples below for brevity.
 
 ```bash
 # Basic installation with domain (includes local Galvanize instancer by default)
@@ -120,13 +130,31 @@ Bash script for building, ingesting, and synchronizing CTF challenges with suppo
 ./setup.sh --help
 ```
 
+## First admin and CTFd setup
+
+CTFd's web setup wizard is disabled: Traefik never routes `/setup`. Instead, `setup.sh` creates the first admin account and the event settings from the command line, as soon as CTFd starts, so the instance goes live already set up. Nobody can claim it through the browser in the meantime, which the public wizard allowed until someone completed it.
+
+On a new deployment, these options are mandatory. The script stops before changing anything on the system if one is missing or invalid:
+
+- `--admin-name` and `--admin-email`: the first admin's user name (which cannot be an email address) and email address.
+- `--user-mode teams|users`: CTFd's mode. CTFd itself requires a choice, and the mode cannot be changed later without deleting every account.
+- The admin password, which is asked for at the start of the run (hidden, typed twice). It never appears on a command line and is never written to disk: it stays in the script's memory and reaches CTFd on standard input, and CTFd stores only its hash. For unattended runs (`--yes`), set it in the `CTFD_ADMIN_PASSWORD` environment variable and keep it through `sudo`:
+  ```bash
+  read -rs CTFD_ADMIN_PASSWORD && export CTFD_ADMIN_PASSWORD
+  sudo --preserve-env=CTFD_ADMIN_PASSWORD ./setup.sh --domain example.com ... --yes
+  ```
+
+Optional: `--ctf-name` (CTFd shows "CTFd" otherwise), `--ctf-description`, `--team-size` (teams mode), and `--active-theme`, which is applied as part of the setup. Every other setting keeps CTFd's default (challenges visible to logged-in users only, public registration and scoreboard, no email verification) and can be changed in the admin panel.
+
+Once CTFd is set up, later setup runs skip this step: the first-run options are not needed, and are ignored if given. Blocking `/setup` also blocks `/setup/integrations` (MajorLeagueCyber integration), which this setup does not use.
+
 ## Custom theme configuration
 
 `--theme` installs a custom theme, and can be given any number of times. Each source is a local folder or a Git URL; append `#REF` to a Git URL to clone a branch or tag (`https://github.com/user/theme.git#v2.0`). The theme is named after the folder or repository (`theme` here), and must contain a `templates/` folder. The names `core`, `core-deprecated` and `admin` are CTFd's own themes and are refused.
 
 Themes are built into the CTFd image: they are kept in `<working-folder>/deploy/ctfd/themes/<name>/`, and `Dockerfile.ctfd` copies that folder next to CTFd's built-in themes. They therefore stay installed on later setup runs, including runs without `--theme`; giving a theme again updates it, and `--remove-theme NAME` removes it. Editing a theme in place takes effect after the image is rebuilt (`docker compose build ctfd && docker compose up -d` in `deploy/`, or a setup run).
 
-Installed themes appear in CTFd under **Admin Panel → Config → Themes**. `--active-theme NAME` selects one from setup (`core` switches back to the default theme). Until CTFd's first-run setup wizard has been completed, the wizard's own Theme field decides: setup warns about it, and the custom themes are listed there.
+Installed themes appear in CTFd under **Admin Panel → Config → Themes**. `--active-theme NAME` selects one from setup (`core` switches back to the default theme). On a new deployment it is applied as part of CTFd's setup, so the instance goes live with it.
 
 Deployments made before this change mounted a single theme from `deploy/data/CTFd/themes/<THEME_NAME>`; the next setup run copies it into the image automatically.
 

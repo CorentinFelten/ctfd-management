@@ -153,71 +153,48 @@ setup_themes() {
     fi
 }
 
-# _ctfd_cli COMPOSE_ARRAY_NAME ARGS... — runs CTFd's CLI (manage.py) in the
-# running ctfd container and prints the last output line (CTFd logs plugin
-# loading on stdout before the command's own output).
-_ctfd_cli() {
-    local -n _compose="$1"; shift
-    "${_compose[@]}" exec -T ctfd python manage.py "$@" 2>/dev/null | tail -n1
+# available_themes — themes CTFd can use as its site theme: its own core
+# ones and the custom ones (admin is the admin panel's theme)
+available_themes() {
+    printf '%s\n' core core-deprecated
+    installed_themes
 }
 
-# apply_active_theme COMPOSE_ARRAY_NAME — after the containers are up, sets
-# CTFd's active theme (--active-theme), and warns when the active theme is
-# no longer installed.
+# theme_is_available NAME
+theme_is_available() {
+    local t
+    while IFS= read -r t; do
+        [[ "$t" == "$1" ]] && return 0
+    done < <(available_themes)
+    return 1
+}
+
+# apply_active_theme COMPOSE_ARRAY_NAME — once CTFd is up and set up, sets
+# its active theme (--active-theme), and warns when the active theme is no
+# longer installed. On the first run, run_ctfd_first_setup has already set
+# it through CTFd's setup.
 apply_active_theme() {
     local compose_array="$1"
     local wanted="${CONFIG[ACTIVE_THEME]:-}"
 
-    if [[ -n "$wanted" ]]; then
-        # admin is CTFd's admin panel theme, not a site theme
-        local known=false t
-        for t in core core-deprecated $(installed_themes); do
-            [[ "$t" == "$wanted" ]] && known=true
-        done
-        [[ "$known" == true ]] \
-            || error_exit "--active-theme $wanted: no such theme (available: core core-deprecated $(installed_themes | xargs))"
+    if [[ -n "$wanted" ]] && ! theme_is_available "$wanted"; then
+        error_exit "--active-theme $wanted: no such theme (available: $(available_themes | xargs))"
     fi
 
-    # CTFd's CLI needs the app (and its database migrations) up
-    log_info "Waiting for CTFd to be healthy..."
-    local deadline=$((SECONDS + 300)) status=""
-    while ((SECONDS < deadline)); do
-        status="$(docker inspect -f '{{.State.Health.Status}}' ctfd 2>/dev/null || true)"
-        [[ "$status" == healthy ]] && break
-        sleep 5
-    done
-    if [[ "$status" != healthy ]]; then
-        log_warning "CTFd is not healthy (status: ${status:-unknown}); not checking the active theme"
-        [[ -z "$wanted" ]] || log_warning "Set the theme manually: Admin Panel → Config → Themes → $wanted"
-        return 0
-    fi
-
-    local current setup_done
-    current="$(_ctfd_cli "$compose_array" get_config ctf_theme || true)"
-    setup_done="$(_ctfd_cli "$compose_array" get_config setup || true)"
+    local current
+    current="$(ctfd_cli "$compose_array" get_config ctf_theme || true)"
 
     if [[ -n "$wanted" && "$current" != "$wanted" ]]; then
-        _ctfd_cli "$compose_array" set_config ctf_theme "$wanted" >/dev/null \
+        ctfd_cli "$compose_array" set_config ctf_theme "$wanted" >/dev/null \
             || error_exit "Failed to set CTFd's active theme to '$wanted'"
         current="$wanted"
         log_success "CTFd's active theme set to '$wanted'"
     elif [[ -n "$wanted" ]]; then
-        log_info "CTFd's active theme is already '$wanted'"
-    fi
-
-    # The first-run setup wizard saves its own Theme choice (default: core)
-    if [[ -n "$wanted" && ! "${setup_done,,}" =~ ^(true|1)$ ]]; then
-        log_warning "CTFd's setup wizard has not been completed yet: it will ask for a theme and"
-        log_warning "save that choice, so pick '$wanted' in its Theme field."
+        log_info "CTFd's active theme is '$wanted'"
     fi
 
     # Theme removed while active: CTFd falls back to core for missing pages
-    if [[ -n "$current" && "$current" != "None" ]]; then
-        local t found=false
-        for t in "${CTFD_BUILTIN_THEMES[@]}" $(installed_themes); do
-            [[ "$t" == "$current" ]] && found=true
-        done
-        [[ "$found" == true ]] \
-            || log_warning "CTFd's active theme '$current' is not installed; CTFd falls back to 'core'. Use --active-theme to pick another."
+    if [[ -n "$current" && "$current" != "None" ]] && ! theme_is_available "$current"; then
+        log_warning "CTFd's active theme '$current' is not installed; CTFd falls back to 'core'. Use --active-theme to pick another."
     fi
 }
