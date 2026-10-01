@@ -5,7 +5,8 @@ name: Setup end-to-end
 #     through Galvanize, and finally switches the deployment to an external
 #     instancer;
 #   - HTTPS (Pebble), local instancer: same, with certificates;
-#   - --no-instancer and --instancer-url: CTFd without a local instancer;
+#   - --no-instancer and --instancer-url: CTFd without a local instancer; the
+#     --no-instancer job also installs, keeps and removes custom themes;
 #   - Debian 13: no HTTPS with a local instancer, in a fresh Debian virtual
 #     machine (Incus, KVM) on the runner, where setup.sh installs Docker
 #     itself. GitHub has no Debian runners, and a Debian container has no
@@ -94,6 +95,27 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Server IP: $server_ip, domain: $domain, setup.sh $setup_args"
 
+      # Two themes: a local folder (with a hidden file, which must be copied)
+      # and a Git repository, pinned to a tag older than its last commit
+      - name: Prepare theme fixtures (--no-instancer)
+        if: matrix.id == 'no-instancer'
+        run: |
+          themes="$RUNNER_TEMP/themes"
+          mkdir -p "$themes/alpha/templates"
+          echo alpha > "$themes/alpha/templates/version.txt"
+          echo hidden > "$themes/alpha/.hidden"
+
+          git init -q -b main "$themes/beta-src"
+          mkdir "$themes/beta-src/templates"
+          ci_git() { git -C "$themes/beta-src" -c user.name=ci -c user.email=ci@example.org "$@"; }
+          echo v1 > "$themes/beta-src/templates/version.txt"
+          ci_git add -A && ci_git commit -qm v1 && ci_git tag v1
+          echo v2 > "$themes/beta-src/templates/version.txt"
+          ci_git commit -qam v2
+          git clone -q --bare "$themes/beta-src" "$themes/beta.git"
+
+          echo "THEME_ARGS=--theme $themes/alpha --theme $themes/beta.git#v1 --active-theme alpha" >> "$GITHUB_ENV"
+
       - name: setup.sh rejects a loopback --domain
         if: matrix.id == 'http'
         run: |
@@ -151,7 +173,7 @@ jobs:
 
       # stdin is /dev/null so any prompt that --yes misses fails the run
       - name: Run setup.sh
-        run: ./setup.sh $SETUP_ARGS < /dev/null
+        run: ./setup.sh $SETUP_ARGS $THEME_ARGS < /dev/null
 
       # Pebble creates a new issuing root at startup; checks verify against it
       - name: Trust Pebble's issuing root (HTTPS)
@@ -164,6 +186,14 @@ jobs:
       - name: Check the stack
         run: bash "$E2E/check-stack.sh"
 
+      - name: Check the themes (--no-instancer)
+        if: matrix.id == 'no-instancer'
+        env:
+          EXPECT_THEMES: alpha beta
+          EXPECT_FILES: alpha/.hidden alpha/templates/version.txt=alpha beta/templates/version.txt=v1
+          ACTIVE_THEME: alpha
+        run: bash "$E2E/check-themes.sh"
+
       - name: Deploy a challenge through Galvanize
         if: matrix.instancer == 'local'
         run: bash "$E2E/deploy-challenge.sh" ci-team-1
@@ -173,6 +203,24 @@ jobs:
 
       - name: Check the stack after the re-run
         run: bash "$E2E/check-stack.sh"
+
+      # The re-run passes no theme options: installed themes must stay
+      - name: Check the themes after the re-run (--no-instancer)
+        if: matrix.id == 'no-instancer'
+        env:
+          EXPECT_THEMES: alpha beta
+          ACTIVE_THEME: alpha
+        run: bash "$E2E/check-themes.sh"
+
+      - name: Remove a theme and reset the active theme (--no-instancer)
+        if: matrix.id == 'no-instancer'
+        env:
+          EXPECT_THEMES: alpha
+          ABSENT_THEMES: beta
+          ACTIVE_THEME: core
+        run: |
+          bash "$E2E/rerun-setup.sh" --remove-theme beta --active-theme core
+          bash "$E2E/check-themes.sh"
 
       - name: Deploy a challenge with the recreated SSH key
         if: matrix.instancer == 'local'

@@ -54,7 +54,9 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 |--------------------------|-------------------------------------------------------------------------------------------|----------|
 | `--domain URL/IP`        | URL/domaine de votre serveur CTFd                                                         | ✅ Oui   |
 | `--working-folder DIR`   | Répertoire de travail (défaut : votre répertoire personnel, `/root` en root)             | ❌ Non   |
-| `--theme DIR/URL`        | Permet l'utilisation d'un thème personnalisé                                              | ❌ Non   |
+| `--theme SOURCE`         | Installer un thème personnalisé : dossier ou URL Git (`#ref` pour une branche/un tag). Répétable | ❌ Non   |
+| `--remove-theme NAME`    | Supprimer un thème personnalisé installé. Répétable                                       | ❌ Non   |
+| `--active-theme NAME`    | Définir NAME comme thème actif de CTFd                                                    | ❌ Non   |
 | `--backup-schedule TYPE` | Fréquence des sauvegardes (`daily` (défaut), `hourly`, `10min`)                           | ❌ Non   |
 | `--instancer-url URL`    | Utiliser un instancer Galvanize externe plutôt que d'en déployer un localement            | ❌ Non   |
 | `--no-instancer`         | Ignorer la configuration de Galvanize (le déployer séparément plus tard)                  | ❌ Non   |
@@ -88,6 +90,10 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 # Installation avec thème personnalisé téléchargé directement depuis github
 ./setup.sh --domain exemple.com --theme https://github.com/user/theme.git
 
+# Plusieurs thèmes, dont un épinglé sur un tag Git, et choix du thème actif
+./setup.sh --domain exemple.com --theme https://github.com/user/theme.git#v2.0 \
+  --theme ./second-theme --active-theme theme
+
 # Email ACME personnalisé pour Let's Encrypt
 ./setup.sh --domain exemple.com --acme-email admin@exemple.com
 
@@ -109,7 +115,13 @@ Script Bash pour construire, ingérer et synchroniser les challenges CTF avec su
 
 ## Configuration du thème personnalisé
 
-Si vous utilisez l'option `--theme`, le script montera automatiquement le dossier du thème personnalisé dans le `docker-compose.yml`.
+`--theme` installe un thème personnalisé et peut être donné autant de fois que nécessaire. Chaque source est un dossier local ou une URL Git ; ajoutez `#REF` à une URL Git pour cloner une branche ou un tag (`https://github.com/user/theme.git#v2.0`). Le thème prend le nom du dossier ou du dépôt (`theme` ici) et doit contenir un dossier `templates/`. Les noms `core`, `core-deprecated` et `admin` sont les thèmes de CTFd et sont refusés.
+
+Les thèmes sont intégrés à l'image CTFd : ils sont conservés dans `<working-folder>/deploy/ctfd/themes/<nom>/`, et `Dockerfile.ctfd` copie ce dossier à côté des thèmes intégrés de CTFd. Ils restent donc installés lors des exécutions suivantes du setup, y compris sans `--theme` ; redonner un thème le met à jour, et `--remove-theme NOM` le supprime. Une modification directe d'un thème prend effet après reconstruction de l'image (`docker compose build ctfd && docker compose up -d` dans `deploy/`, ou une exécution du setup).
+
+Les thèmes installés apparaissent dans CTFd sous **Admin Panel → Config → Themes**. `--active-theme NOM` en sélectionne un depuis le setup (`core` revient au thème par défaut). Tant que l'assistant de première installation de CTFd n'a pas été terminé, c'est son propre champ Theme qui décide : le setup le signale, et les thèmes personnalisés y sont proposés.
+
+Les déploiements antérieurs à ce changement montaient un seul thème depuis `deploy/data/CTFd/themes/<THEME_NAME>` ; l'exécution suivante du setup le copie automatiquement dans l'image.
 
 ## Déploiement de l'instancer Galvanize
 
@@ -165,8 +177,9 @@ deploy/
 ├── .secrets                    # Copie en clair des secrets générés (chmod 600)
 ├── traefik.env                 # Identifiants du fournisseur DNS, seul env reçu par Traefik (chmod 600)
 ├── traefik-config/             # Configs statiques et dynamiques Traefik, stockage letsencrypt
-├── ctfd/                       # Dockerfile CTFd et entrypoint personnalisé
-│   └── plugins/zync/           # Clone du plugin instancer CTFd
+├── ctfd/                       # Contexte de build de l'image CTFd (Dockerfile, entrypoint)
+│   ├── plugins/zync/           # Clone du plugin instancer CTFd
+│   └── themes/                 # Thèmes personnalisés (--theme), intégrés à l'image CTFd
 ├── ansible-ssh/                # Paire de clés SSH Ansible (instancer local uniquement)
 ├── data/                       # Données d'exécution (base de données, uploads, galvanize)
 │   ├── CTFd/
@@ -327,9 +340,9 @@ Utilisation :
 - Configuration des groupes d'utilisateurs
 
 ### 3. Configuration du thème (optionnel)
-Si le flag `--theme` est utilisé :
-- Montage le dossier `theme/custom/` dans le conteneur CTFd
-- Permet l'utilisation de thèmes personnalisés
+Avec `--theme`, `--remove-theme` ou `--active-theme` :
+- Installe, met à jour ou supprime les thèmes personnalisés intégrés à l'image CTFd
+- Définit éventuellement le thème actif de CTFd (voir [Configuration du thème personnalisé](#configuration-du-thème-personnalisé))
 
 ## Outil de gestion des challenges
 

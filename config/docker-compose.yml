@@ -30,7 +30,6 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/CTFd/logs:/var/log/CTFd
       - ${DATA_DIR:-./data}/CTFd/uploads:/var/uploads
-#      - ${DATA_DIR:-../data}/CTFd/themes/${THEME_NAME:-custom}:/opt/CTFd/CTFd/themes/${THEME_NAME:-custom}
       - ./ctfd/plugins/zync:/opt/CTFd/CTFd/plugins/zync:ro
     depends_on:
       redis:
