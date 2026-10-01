@@ -82,11 +82,16 @@ fi
 
 section "Routing"
 
-fetch "${SCHEME}://${DOMAIN}/" -fL | grep -i "ctfd" >/dev/null \
-    || fail "CTFd is not served at ${SCHEME}://${DOMAIN}/"
+# Traefik only routes to a container with a healthcheck once it is healthy,
+# and applies that a moment after Docker reports it: a container that setup
+# just recreated (e.g. CTFd after an .env change) can briefly be unrouted.
+ctfd_is_served() { fetch "${SCHEME}://${DOMAIN}/" -fL 2>/dev/null | grep -i "ctfd" >/dev/null; }
+wait_for "Traefik to serve CTFd at ${SCHEME}://${DOMAIN}/" 60 ctfd_is_served
 pass "CTFd answers at ${SCHEME}://${DOMAIN}/"
 
 if [[ "$INSTANCER" == local ]]; then
+    instancer_is_served() { fetch "${SCHEME}://${instancer_domain}/health" -f -o /dev/null 2>/dev/null; }
+    wait_for "Traefik to serve Galvanize at ${SCHEME}://${instancer_domain}" 60 instancer_is_served
     health="$(fetch "${SCHEME}://${instancer_domain}/health" -f)" \
         || fail "Galvanize /health is not reachable through Traefik at ${SCHEME}://${instancer_domain}"
     [[ "$(jq -r .status <<< "$health")" == ok ]] || fail "Unexpected /health response: $health"
