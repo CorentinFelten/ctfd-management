@@ -498,7 +498,7 @@ DNS provider credentials (for wildcard TLS certificates) are written to `<deploy
 
 ## Continuous Integration
 
-`.github/workflows/setup-e2e.yml` runs on every push (documentation-only changes excepted) and can be started manually from the Actions tab. It runs `setup.sh` for real on fresh Ubuntu 24.04 runners, in five jobs:
+`.github/workflows/setup-e2e.yml` runs on every push to a branch other than `main` (documentation-only changes excepted), and can be started manually from the Actions tab. Branches are merged into `main` once their run passes, so `main` is not tested again. It runs `setup.sh` for real on fresh Ubuntu 24.04 runners, in five jobs:
 
 - **no HTTPS**: `./setup.sh --domain <runner IP> --yes`, with the bundled Galvanize instancer. This job also checks that a loopback `--domain` is rejected, and finally re-runs setup with `--instancer-url` to check that switching to an external instancer stops and removes the local one.
 - **HTTPS**: `./setup.sh --domain <runner-ip>.sslip.io --acme-email … --dns-provider cloudflare --yes`, with the bundled instancer, against [Pebble](https://github.com/letsencrypt/pebble), Let's Encrypt's test ACME server, running on the runner. sslip.io resolves the domain and all its subdomains to the runner. For this job only, the CI points the checkout's Traefik template at Pebble and the DNS-01 challenge at lego's `exec` provider running a no-op (Pebble accepts every challenge), and pre-seeds `traefik.env` with a placeholder Cloudflare token that `--yes` must keep. A real DNS provider API and the real Let's Encrypt servers are not exercised.

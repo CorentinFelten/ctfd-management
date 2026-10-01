@@ -20,7 +20,11 @@ name: Setup end-to-end
 # CTFd, the instancer and challenge instances) runs as on a real server.
 
 on:
+  # Branches only: main receives merges of branches whose run already
+  # passed, so it is not tested again (run it by hand if needed).
   push:
+    branches-ignore:
+      - main
     paths-ignore:
       - "**.md"
       - "LICENSE"

@@ -503,7 +503,7 @@ Les identifiants du fournisseur DNS (pour les certificats TLS wildcard) sont éc
 
 ## Intégration continue
 
-`.github/workflows/setup-e2e.yml` s'exécute à chaque push (sauf changements de documentation uniquement) et peut être lancé manuellement depuis l'onglet Actions. Il exécute réellement `setup.sh` sur des runners Ubuntu 24.04 neufs, dans cinq jobs :
+`.github/workflows/setup-e2e.yml` s'exécute à chaque push sur une branche autre que `main` (sauf changements de documentation uniquement), et peut être lancé manuellement depuis l'onglet Actions. Les branches sont fusionnées dans `main` une fois leur exécution réussie, `main` n'est donc pas retestée. Il exécute réellement `setup.sh` sur des runners Ubuntu 24.04 neufs, dans cinq jobs :
 
 - **sans HTTPS** : `./setup.sh --domain <IP du runner> --yes`, avec l'instancer Galvanize intégré. Ce job vérifie aussi qu'un `--domain` de loopback est refusé, puis réexécute le setup avec `--instancer-url` pour vérifier que le passage à un instancer externe arrête et supprime l'instancer local.
 - **HTTPS** : `./setup.sh --domain <ip-du-runner>.sslip.io --acme-email … --dns-provider cloudflare --yes`, avec l'instancer intégré, face à [Pebble](https://github.com/letsencrypt/pebble), le serveur ACME de test de Let's Encrypt, lancé sur le runner. sslip.io résout le domaine et tous ses sous-domaines vers le runner. Pour ce job uniquement, la CI fait pointer le modèle Traefik du dépôt vers Pebble et le challenge DNS-01 vers le fournisseur `exec` de lego, qui n'exécute rien (Pebble accepte tous les challenges), et pré-remplit `traefik.env` avec un faux jeton Cloudflare que `--yes` doit conserver. Ni l'API d'un vrai fournisseur DNS ni les vrais serveurs Let's Encrypt ne sont sollicités.
