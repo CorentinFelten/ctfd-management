@@ -20,7 +20,8 @@ THEMES_TO_REMOVE=()
 
 themes_dir() { printf '%s' "${CONFIG[DEPLOY_DIR]}/ctfd/themes"; }
 
-# theme_source_parts SOURCE — prints "<location>\t<ref>\t<name>".
+# theme_source_parts SOURCE — prints "<location>␟<ref>␟<name>", separated by
+#   the ASCII unit separator (\x1f): unlike a tab, read keeps an empty field.
 #   SOURCE is a local folder or a Git URL, optionally followed by #REF (a
 #   branch or tag to clone). The theme name is the last path component,
 #   without a trailing slash or .git.
@@ -31,7 +32,7 @@ theme_source_parts() {
     location="${location%/}"
     name="${location##*/}"
     name="${name%.git}"
-    printf '%s\t%s\t%s' "$location" "$ref" "$name"
+    printf '%s\x1f%s\x1f%s\n' "$location" "$ref" "$name"
 }
 
 # validate_theme_name NAME — exits on a name CTFd cannot use as a theme
@@ -51,7 +52,7 @@ validate_theme_name() {
 # prepared next to it and swapped in only once complete and valid.
 install_theme() {
     local source="$1" location ref name
-    IFS=$'\t' read -r location ref name < <(theme_source_parts "$source")
+    IFS=$'\x1f' read -r location ref name < <(theme_source_parts "$source")
     validate_theme_name "$name"
 
     local dir staging
