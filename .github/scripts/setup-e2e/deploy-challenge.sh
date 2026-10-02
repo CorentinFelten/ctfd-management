@@ -6,14 +6,11 @@
 # Usage: deploy-challenge.sh TEAM_ID
 
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/galvanize-api.sh"
 
 team_id="${1:?Usage: $0 TEAM_ID}"
 category="web"
 challenge="ci-http"
-
-instancer_domain="$(env_value INSTANCER_DOMAIN)"
-jwt_secret="$(env_value ZYNC_JWT_SECRET)"
-[[ -n "$instancer_domain" && -n "$jwt_secret" ]] || fail ".env has no INSTANCER_DOMAIN or ZYNC_JWT_SECRET"
 
 # ── Test challenge ──────────────────────────────────────────────────────────
 # Galvanize indexes deploy/data/galvanize/challenges recursively; directories
@@ -35,42 +32,14 @@ EOF
 sudo chown -R 1000:1000 "$DEPLOY_DIR/data/galvanize/challenges/ci"
 pass "Wrote $challenge_dir/challenge.yml"
 
-# ── Galvanize API client ────────────────────────────────────────────────────
-
-b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
-
-# jwt ROLE — HS256 token with the claims Zync sends
-jwt() {
-    local header payload signature
-    header="$(printf '{"alg":"HS256","typ":"JWT"}' | b64url)"
-    payload="$(jq -cjn \
-        --arg team "$team_id" --arg chall "$challenge" --arg cat "$category" --arg role "$1" \
-        --argjson exp "$(($(date +%s) + 3600))" \
-        '{team_id: $team, challenge_name: $chall, category: $cat, role: $role, exp: $exp}' | b64url)"
-    signature="$(printf '%s.%s' "$header" "$payload" \
-        | openssl dgst -sha256 -hmac "$jwt_secret" -binary | b64url)"
-    printf '%s.%s.%s' "$header" "$payload" "$signature"
-}
-
-player_token="$(jwt player)"
-admin_token="$(jwt admin)"
-body_file="$(mktemp)"
-trap 'rm -f "$body_file"' EXIT
-
-# api METHOD PATH TOKEN [JSON] — prints the HTTP status, body in $body_file
-api() {
-    local -a args=(-o "$body_file" -w '%{http_code}' -X "$1" -H "Authorization: Bearer $3")
-    [[ -n "${4:-}" ]] && args+=(-H "Content-Type: application/json" -d "$4")
-    fetch "${SCHEME}://${instancer_domain}$2" "${args[@]}"
-}
+player_token="$(galvanize_jwt player "$team_id" "$category" "$challenge")"
+admin_token="$(galvanize_jwt admin "$team_id" "$category" "$challenge")"
+api() { galvanize_api "$@"; }
+body_file="$GALVANIZE_BODY"
 
 request="$(jq -cn --arg c "$category" --arg n "$challenge" '{category: $c, challenge_name: $n}')"
 
-show_errors() {
-    api GET /admin/error-deployments "$admin_token" >/dev/null || true
-    echo "Galvanize error deployments:" >&2
-    jq . "$body_file" >&2 || cat "$body_file" >&2
-}
+show_errors() { galvanize_errors; }
 
 # ── Deploy ──────────────────────────────────────────────────────────────────
 

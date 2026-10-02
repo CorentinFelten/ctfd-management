@@ -6,6 +6,11 @@ name: Galvanize end-to-end
 # (setup-e2e-ubuntu.yml), deploying it with its own playbooks
 # (.github/scripts/setup-e2e/use-galvanize-ref.sh).
 #
+# With without_redis (default), the job also runs Galvanize without Redis for
+# a while (galvanize-without-redis.sh): a TCP challenge without
+# traefik_network, its port within randomized_port_min/max, and its expiry
+# terminated by the scheduler itself.
+#
 # One job instead of setup-e2e.yml's five: the other scenarios do not run
 # Galvanize locally, and the Debian VM job tests the setup script on Debian
 # rather than Galvanize, and its VM can take long to boot.
@@ -25,6 +30,10 @@ on:
       galvanize_ref:
         description: "Branch, tag or commit of that repository"
         required: true
+      without_redis:
+        description: "Also run Galvanize without Redis for a while: TCP challenge, expiry, port range, max_concurrent_ansible (needs Galvanize after v0.7.2)"
+        type: boolean
+        default: true
       tls:
         description: "http: the --no-https job (deploys, re-runs, restores a backup, switches instancers); https: the HTTPS job with Pebble certificates"
         type: choice
@@ -49,6 +58,7 @@ jobs:
     with:
       galvanize_repository: ${{ inputs.galvanize_repository }}
       galvanize_ref: ${{ inputs.galvanize_ref }}
+      galvanize_without_redis: ${{ inputs.without_redis }}
       scenarios: >-
         ${{ inputs.tls == 'https'
           && '[{ "name": "HTTPS (Pebble)", "id": "https", "tls": "https", "instancer": "local" }]'
