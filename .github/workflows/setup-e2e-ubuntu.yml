@@ -22,6 +22,10 @@ on:
         description: "Branch, tag or commit of galvanize_repository"
         type: string
         default: ""
+      galvanize_multi_endpoint:
+        description: "Local instancer jobs also deploy a challenge with two user-facing services (deploy-multi-endpoint.sh)"
+        type: boolean
+        default: false
       galvanize_without_redis:
         description: "Local instancer jobs also run Galvanize without Redis for a while (galvanize-without-redis.sh)"
         type: boolean
@@ -263,6 +267,11 @@ jobs:
       - name: Deploy a challenge through Galvanize
         if: matrix.instancer == 'local'
         run: bash "$E2E/deploy-challenge.sh" ci-team-1
+
+      # Connection info of a challenge with a web and an SSH-like service
+      - name: Deploy a challenge with two user-facing services
+        if: inputs.galvanize_multi_endpoint && matrix.instancer == 'local'
+        run: bash "$E2E/deploy-multi-endpoint.sh"
 
       # Expiry without the job queue, max_concurrent_ansible, the randomized
       # port range and a TCP challenge without traefik_network; the original
