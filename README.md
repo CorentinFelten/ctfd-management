@@ -217,6 +217,7 @@ The template `config/galvanize/config.yaml` is copied to `deploy/data/galvanize/
 | `instancer.instancer_host` | `--domain`, or `<ip>.sslip.io` for IP deployments (wildcard DNS) |
 | `instancer.redis.addr` / `db` | `redis:6379`, db `1` (CTFd uses db `0` on the same Redis) |
 | `instancer.extra_deployment_parameters.traefik_network` | `<COMPOSE_PROJECT_NAME>_challenges` (see [Network isolation](#network-isolation)) |
+| `instancer.metrics.username` / `password` | `prometheus` and a generated password (`GALVANIZE_METRICS_PASSWORD`): basic auth on Galvanize's Prometheus metrics, served on port 5001 of the instancer container, reachable only from the deployment's internal Docker network. A Prometheus scraping it uses these credentials |
 
 Other defaults: TCP host ports are randomized per team (`randomize_published_ports: true`), and every challenge container is limited to 1 CPU, 512 MB of RAM and 256 PIDs unless the challenge overrides `resource_limits`.
 
@@ -577,6 +578,7 @@ The setup script automatically generates:
 - **Database password** (16 characters)
 - **Database root password** (16 characters)
 - **Galvanize JWT secret** (48 characters)
+- **Galvanize metrics password** (32 characters, with a local instancer)
 
 All secrets are written to `<deploy-dir>/.secrets` (chmod 600) and to `.env`.
 
