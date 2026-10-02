@@ -14,26 +14,10 @@
         - create
         - delete
 
-    # Docker Compose 2.38+ rejects a service that sets pids_limit next to
-    # deploy.resources.limits ("can't set distinct values on 'pids_limit' and
-    # 'deploy.resources.limits.pids'"), which is how Galvanize sends the PID
-    # limit. Move it to deploy.resources.limits.pids. resource_overrides is an
-    # extra var, which set_fact cannot override, hence the new variable.
-    - name: Normalise resource limits for Docker Compose
-      ansible.builtin.set_fact:
-        _resource_overrides: >-
-          {{ (resource_overrides | dict2items | rejectattr('key', 'equalto', 'pids_limit') | items2dict)
-             | combine({'deploy': {'resources': {'limits': {'pids': resource_overrides.pids_limit}}}}
-                       if 'pids_limit' in resource_overrides else {}, recursive=True) }}
-      when: resource_overrides is defined and resource_overrides | length > 0
-      tags:
-        - create
-        - delete
-
     - name: Apply resource limits to service
       ansible.builtin.set_fact:
-        _tcp_service: "{{ _tcp_service | combine(_resource_overrides, recursive=True) }}"
-      when: _resource_overrides is defined and _resource_overrides | length > 0
+        _tcp_service: "{{ _tcp_service | combine(resource_overrides, recursive=True) }}"
+      when: resource_overrides is defined and resource_overrides | length > 0
       tags:
         - create
         - delete
@@ -43,7 +27,6 @@
         compose_definition:
           services:
             tcp: "{{ _tcp_service }}"
-          networks: "{{ {traefik_network: {'external': true}} }}"
       tags:
         - create
         - delete
@@ -61,3 +44,14 @@
         project_name: "{{ compose_project }}"
         state: absent
       tags: delete
+
+    # Instances started by Galvanize v0.7.1 or earlier have another project
+    # name (legacy_compose_project, set when it differs): remove such a
+    # leftover too. A no-op when there is none, and never fails the run.
+    - name: Remove an instance left under its previous project name
+      ansible.builtin.command: "docker compose -p {{ legacy_compose_project }} down --remove-orphans"
+      when: legacy_compose_project is defined
+      changed_when: false
+      failed_when: false
+      tags:
+        - delete
