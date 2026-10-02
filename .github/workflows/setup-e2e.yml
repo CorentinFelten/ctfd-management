@@ -44,6 +44,25 @@ permissions:
   contents: read
 
 jobs:
+  # config/galvanize/playbooks/ must be the pinned Galvanize version's own
+  # data/playbooks/: the data/ bind mount hides those baked into the image
+  galvanize-playbooks:
+    name: Galvanize playbooks match the pinned image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compare with the pinned version's data/playbooks
+        run: |
+          image="$(yq '.services.instancer.image' config/docker-compose.yml)"
+          version="${image##*:}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+            || { echo "::error::The Galvanize image must be pinned to a version (X.Y.Z), not '$version'"; exit 1; }
+          git -c advice.detachedHead=false clone --quiet --depth 1 --branch "v$version" https://github.com/28Pollux28/galvanize "$RUNNER_TEMP/galvanize"
+          diff -r "$RUNNER_TEMP/galvanize/data/playbooks" config/galvanize/playbooks \
+            || { echo "::error::config/galvanize/playbooks/ differs from Galvanize v$version's data/playbooks/"; exit 1; }
+          echo "config/galvanize/playbooks/ matches Galvanize v$version"
+
   setup:
     name: Ubuntu
     uses: ./.github/workflows/setup-e2e-ubuntu.yml

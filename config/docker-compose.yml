@@ -124,7 +124,9 @@ services:
       retries: 5
 
   instancer:
-    image: ghcr.io/28pollux28/galvanize:latest
+    # Pinned: config/galvanize/playbooks/ are copies of this version's
+    # data/playbooks/, and CI checks they match. Bump both together.
+    image: ghcr.io/28pollux28/galvanize:0.7.3
     container_name: galvanize-instancer
     profiles: [instancer]
     stop_grace_period: 1m
