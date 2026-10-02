@@ -50,7 +50,7 @@ services:
       - internal
 
   traefik:
-    image: traefik:v3.6
+    image: traefik:v3.7
     container_name: traefik
     restart: unless-stopped
     security_opt:
@@ -86,7 +86,7 @@ services:
 
   maria-db:
     # MariaDB is used because CTFd does not officially support PostgreSQL
-    image: mariadb:10.11
+    image: mariadb:11.8
     restart: unless-stopped
     container_name: maria-db
     hostname: maria-db
@@ -106,7 +106,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --wait_timeout=28800, --log-warnings=0]
+    command: [mariadbd, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --wait_timeout=28800, --log-warnings=0]
 
   redis:
     container_name: redis

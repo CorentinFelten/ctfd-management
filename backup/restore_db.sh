@@ -173,7 +173,7 @@ fi
 # Verify database connection (use MYSQL_PWD to avoid password in ps output)
 log_message "Verifying database connection..."
 if ! docker exec -e MYSQL_PWD="${DB_ROOT_PASSWORD}" "${CONTAINER_NAME}" \
-    mysql -u root -e "SELECT 1;" &>/dev/null; then
+    mariadb -u root -e "SELECT 1;" &>/dev/null; then
     log_message "ERROR: Cannot connect to database. Password may be incorrect."
     exit 1
 fi
@@ -185,7 +185,7 @@ fi
 log_message "Creating safety dump of current database before restore..."
 SAFETY_DUMP="${BACKUP_BASE_DIR}/pre_restore_${DB_NAME}_$(date +%Y%m%d_%H%M%S).sql.gz"
 if docker exec -e MYSQL_PWD="${DB_ROOT_PASSWORD}" "${CONTAINER_NAME}" \
-    mysqldump -u root --single-transaction --quick --lock-tables=false "${DB_NAME}" \
+    mariadb-dump -u root --single-transaction --quick --lock-tables=false "${DB_NAME}" \
     | gzip > "$SAFETY_DUMP" 2>/dev/null; then
     log_message "Safety dump saved to: $SAFETY_DUMP"
 else
@@ -206,7 +206,7 @@ fi
 
 log_message "  Dropping existing database..."
 if ! docker exec -e MYSQL_PWD="${DB_ROOT_PASSWORD}" "${CONTAINER_NAME}" \
-    mysql -u root -e "DROP DATABASE IF EXISTS \`${DB_NAME}\`; CREATE DATABASE \`${DB_NAME}\`;" 2>/dev/null; then
+    mariadb -u root -e "DROP DATABASE IF EXISTS \`${DB_NAME}\`; CREATE DATABASE \`${DB_NAME}\`;" 2>/dev/null; then
     log_message "ERROR: Failed to drop/create database"
     exit 1
 fi
@@ -214,7 +214,7 @@ fi
 log_message "  Restoring database from backup..."
 if [[ "$db_dump" == "plain" ]]; then
     if docker exec -i -e MYSQL_PWD="${DB_ROOT_PASSWORD}" "${CONTAINER_NAME}" \
-        mysql -u root "${DB_NAME}" < "${BACKUP_DIR}/database.sql" 2>/dev/null; then
+        mariadb -u root "${DB_NAME}" < "${BACKUP_DIR}/database.sql" 2>/dev/null; then
         log_message "SUCCESS: Database restored successfully"
     else
         log_message "ERROR: Database restore failed"
@@ -223,7 +223,7 @@ if [[ "$db_dump" == "plain" ]]; then
 else
     if gunzip < "${BACKUP_DIR}/database.sql.gz" \
         | docker exec -i -e MYSQL_PWD="${DB_ROOT_PASSWORD}" "${CONTAINER_NAME}" \
-            mysql -u root "${DB_NAME}" 2>/dev/null; then
+            mariadb -u root "${DB_NAME}" 2>/dev/null; then
         log_message "SUCCESS: Database restored successfully"
     else
         log_message "ERROR: Database restore failed"

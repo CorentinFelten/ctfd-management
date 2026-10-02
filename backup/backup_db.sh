@@ -106,7 +106,7 @@ log_message "  Database contains: users, teams, challenges, submissions, solves,
 
 # Use MYSQL_PWD env var instead of -p flag to avoid password exposure in ps output
 if docker exec -e MYSQL_PWD="${DB_ROOT_PASSWORD}" "${CONTAINER_NAME}" \
-    mysqldump -u root --single-transaction --quick --lock-tables=false "${DB_NAME}" \
+    mariadb-dump -u root --single-transaction --quick --lock-tables=false "${DB_NAME}" \
     > "${BACKUP_DIR}/database.sql"; then
 
     DB_SIZE="$(du -h "${BACKUP_DIR}/database.sql" | cut -f1)"
