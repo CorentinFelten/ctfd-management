@@ -217,6 +217,7 @@ Le modèle `config/galvanize/config.yaml` est copié vers `deploy/data/galvanize
 | `instancer.instancer_host` | `--domain`, ou `<ip>.sslip.io` pour les déploiements sur IP (DNS wildcard) |
 | `instancer.redis.addr` / `db` | `redis:6379`, base `1` (CTFd utilise la base `0` du même Redis) |
 | `instancer.extra_deployment_parameters.traefik_network` | `<COMPOSE_PROJECT_NAME>_challenges` (voir [Isolation réseau](#isolation-réseau)) |
+| `instancer.metrics.username` / `password` | `prometheus` et un mot de passe généré (`GALVANIZE_METRICS_PASSWORD`) : authentification basique sur les métriques Prometheus de Galvanize, servies sur le port 5001 du conteneur de l'instancer, joignable uniquement depuis le réseau Docker interne du déploiement. Un Prometheus qui les collecte utilise ces identifiants |
 
 Autres valeurs par défaut : les ports hôtes TCP sont tirés au hasard pour chaque équipe (`randomize_published_ports: true`), et chaque conteneur de challenge est limité à 1 CPU, 512 Mo de RAM et 256 PID, sauf si le challenge surcharge `resource_limits`.
 
@@ -582,6 +583,7 @@ Le script d'installation génère automatiquement :
 - **Mot de passe de la base de données** (16 caractères)
 - **Mot de passe root de la base de données** (16 caractères)
 - **Secret JWT Galvanize** (48 caractères)
+- **Mot de passe des métriques Galvanize** (32 caractères, avec un instancer local)
 
 Tous les secrets sont écrits dans `<deploy-dir>/.secrets` (chmod 600) et dans `.env`.
 

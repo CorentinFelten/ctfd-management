@@ -203,6 +203,17 @@ install_ctfd() {
         instancer_mode="none"
     fi
 
+    # Basic-auth password of Galvanize's metrics server (port 5001, internal
+    # network only; user "prometheus"). Generated for a local instancer, and
+    # kept on every re-run, even one switching to another instancer mode, so
+    # .secrets stays the same.
+    local metrics_password
+    metrics_password="$(_existing_secret "$deploy_dir" GALVANIZE_METRICS_PASSWORD)"
+    if [[ -z "$metrics_password" && "$use_local_instancer" == "true" ]]; then
+        metrics_password="$(generate_password 32)"
+    fi
+    CONFIG[GALVANIZE_METRICS_PASSWORD]="$metrics_password"
+
     # Docker Compose reads COMPOSE_PROFILES from .env, so a manual
     # `docker compose up -d`/`down`/`pull` in the deploy dir includes the
     # instancer exactly when it runs locally. Rewritten on every run so it
@@ -272,6 +283,7 @@ install_ctfd() {
             SSH_KEY_PATH          "${CONFIG[SSH_KEY_PATH]}"
         )
     fi
+    [[ -n "$metrics_password" ]] && env_settings+=(GALVANIZE_METRICS_PASSWORD "$metrics_password")
     setup_env_keys "${env_settings[@]}"
     log_success "Settings written to $env_file"
 
@@ -350,6 +362,9 @@ MARIADB_PASSWORD=${db_password}
 MARIADB_ROOT_PASSWORD=${db_root_password}
 JWT_SECRET_KEY=${jwt_secret_key}
 EOF
+        if [[ -n "$metrics_password" ]]; then
+            echo "GALVANIZE_METRICS_PASSWORD=${metrics_password}" >> "$secrets_file"
+        fi
     )
     chown "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$secrets_file"
 

@@ -109,7 +109,9 @@ configure_instancer() {
     # they are never parsed as part of the yq expression.
     #   redis db 1: CTFd uses db 0 on the shared Redis
     #   traefik_network: shared only by challenge instances and Traefik
+    #   metrics: basic auth on Galvanize's metrics server (port 5001)
     G_JWT_SECRET="${CONFIG[JWT_SECRET_KEY]}" \
+    G_METRICS_PASSWORD="${CONFIG[GALVANIZE_METRICS_PASSWORD]}" \
     G_ANSIBLE_USER="$ANSIBLE_USER" \
     G_INVENTORY="${CONFIG[DOMAIN]}," \
     G_INSTANCER_HOST="$instancer_host" \
@@ -121,7 +123,9 @@ configure_instancer() {
         .instancer.instancer_host = strenv(G_INSTANCER_HOST) |
         .instancer.redis.addr = "redis:6379" |
         .instancer.redis.db = 1 |
-        .instancer.extra_deployment_parameters.traefik_network = strenv(G_TRAEFIK_NETWORK)
+        .instancer.extra_deployment_parameters.traefik_network = strenv(G_TRAEFIK_NETWORK) |
+        .instancer.metrics.username = "prometheus" |
+        .instancer.metrics.password = strenv(G_METRICS_PASSWORD)
     ' "$config_path"
 
     log_success "Local instancer setup complete"

@@ -197,6 +197,44 @@ if [[ "$INSTANCER" == local ]]; then
     expect_yaml .instancer.extra_deployment_parameters.traefik_network ctfd_infra_challenges
     pass "Galvanize config is filled in"
 
+    # Galvanize's metrics server (port 5001) is not published: scrape it from
+    # inside the instancer container. The password goes through the exec's
+    # environment, not its command line.
+    metrics_password="$(env_value GALVANIZE_METRICS_PASSWORD)"
+    ((${#metrics_password} >= 32)) || fail ".env has no generated GALVANIZE_METRICS_PASSWORD"
+    expect_yaml .instancer.metrics.username prometheus
+    expect_yaml .instancer.metrics.password "$metrics_password"
+    sudo grep -x "GALVANIZE_METRICS_PASSWORD=${metrics_password}" "$DEPLOY_DIR/.secrets" >/dev/null \
+        || fail ".secrets does not record GALVANIZE_METRICS_PASSWORD"
+    pass "A metrics password is generated and recorded in .env and .secrets"
+
+    # scrape [PASSWORD] — HTTP status of the metrics server, as user prometheus
+    # with PASSWORD, or without credentials; "+metrics" when it served
+    # Galvanize's metrics
+    scrape() {
+        docker exec -e "PASSWORD=${1:-}" galvanize-instancer python3 -c '
+import base64, os, urllib.error, urllib.request
+req = urllib.request.Request("http://127.0.0.1:5001/metrics")
+if os.environ["PASSWORD"]:
+    token = base64.b64encode(("prometheus:" + os.environ["PASSWORD"]).encode()).decode()
+    req.add_header("Authorization", "Basic " + token)
+try:
+    body = urllib.request.urlopen(req, timeout=5).read().decode()
+    print("200" + ("+metrics" if "instancer_" in body else ""))
+except urllib.error.HTTPError as e:
+    print(e.code)
+except OSError:
+    print("unreachable")
+'
+    }
+    metrics_server_up() { [[ "$(scrape)" != unreachable ]]; }
+    wait_for "Galvanize's metrics server" 60 metrics_server_up
+    [[ "$(scrape)" == 401 ]] || fail "Galvanize's metrics server answers without credentials ($(scrape))"
+    [[ "$(scrape wrong-password)" == 401 ]] || fail "Galvanize's metrics server accepts a wrong password"
+    [[ "$(scrape "$metrics_password")" == "200+metrics" ]] \
+        || fail "Galvanize's metrics server refuses the generated password ($(scrape "$metrics_password"))"
+    pass "Galvanize's metrics require the generated password (port 5001, internal only)"
+
     for pb in config/galvanize/playbooks/*.yaml; do
         sudo cmp -s "$pb" "$DEPLOY_DIR/data/galvanize/playbooks/$(basename "$pb")" \
             || fail "Playbook $(basename "$pb") was not copied to the deployment"
@@ -207,6 +245,7 @@ elif [[ "$FRESH_INSTALL" == true ]]; then
     [[ ! -e "$DEPLOY_DIR/ansible-ssh" ]]    || fail "ansible-ssh/ was created without a local instancer"
     ! id ansible-user >/dev/null 2>&1        || fail "ansible-user was created without a local instancer"
     [[ -z "$(env_value GALVANIZE_CONFIG_PATH)" ]] || fail ".env has GALVANIZE_CONFIG_PATH without a local instancer"
+    [[ -z "$(env_value GALVANIZE_METRICS_PASSWORD)" ]] || fail ".env has GALVANIZE_METRICS_PASSWORD without a local instancer"
     pass "No Galvanize data, Ansible user or SSH key without a local instancer"
 fi
 
