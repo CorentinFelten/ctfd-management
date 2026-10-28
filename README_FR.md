@@ -223,7 +223,7 @@ Autres valeurs par défaut : les ports hôtes TCP sont tirés au hasard pour cha
 
 ### Playbooks Galvanize
 
-Les playbooks Ansible (`http`, `tcp`, `custom_compose`) sont fournis dans `config/galvanize/playbooks/` et copiés vers `deploy/data/galvanize/playbooks/` à chaque exécution du setup. Le montage `data/` masque les playbooks intégrés à l'image Galvanize, ils doivent donc se trouver sur l'hôte. Ce sont des copies non modifiées du dossier [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/v0.7.3/data/playbooks) de la version de Galvanize épinglée dans `config/docker-compose.yml` (actuellement 0.7.3), et la CI vérifie qu'ils lui correspondent. Pour mettre à jour Galvanize, changez le tag de l'image et copiez les `data/playbooks/*.yaml` de cette version dans `config/galvanize/playbooks/` dans le même commit.
+Les playbooks Ansible (`http`, `tcp`, `custom_compose`) sont fournis dans `config/galvanize/playbooks/` et copiés vers `deploy/data/galvanize/playbooks/` à chaque exécution du setup. Le montage `data/` masque les playbooks intégrés à l'image Galvanize, ils doivent donc se trouver sur l'hôte. Ce sont des copies non modifiées du dossier [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/v0.7.4/data/playbooks) de la version de Galvanize épinglée dans `config/docker-compose.yml` (actuellement 0.7.4), et la CI vérifie qu'ils lui correspondent. Pour mettre à jour Galvanize, changez le tag de l'image et copiez les `data/playbooks/*.yaml` de cette version dans `config/galvanize/playbooks/` dans le même commit.
 
 ### Isolation réseau
 
