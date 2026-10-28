@@ -223,7 +223,7 @@ Other defaults: TCP host ports are randomized per team (`randomize_published_por
 
 ### Galvanize playbooks
 
-The Ansible playbooks (`http`, `tcp`, `custom_compose`) are shipped in `config/galvanize/playbooks/` and copied to `deploy/data/galvanize/playbooks/` on every setup run. The `data/` bind mount hides the playbooks baked into the Galvanize image, so they must live on the host. They are unmodified copies of the [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/v0.7.3/data/playbooks) of the Galvanize version pinned in `config/docker-compose.yml` (currently 0.7.3), and CI checks that they match it. To upgrade Galvanize, change the image tag and copy that version's `data/playbooks/*.yaml` into `config/galvanize/playbooks/` in the same commit.
+The Ansible playbooks (`http`, `tcp`, `custom_compose`) are shipped in `config/galvanize/playbooks/` and copied to `deploy/data/galvanize/playbooks/` on every setup run. The `data/` bind mount hides the playbooks baked into the Galvanize image, so they must live on the host. They are unmodified copies of the [`data/playbooks/`](https://github.com/28Pollux28/galvanize/tree/v0.7.4/data/playbooks) of the Galvanize version pinned in `config/docker-compose.yml` (currently 0.7.4), and CI checks that they match it. To upgrade Galvanize, change the image tag and copy that version's `data/playbooks/*.yaml` into `config/galvanize/playbooks/` in the same commit.
 
 ### Network isolation
 
