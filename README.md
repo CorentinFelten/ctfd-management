@@ -12,6 +12,10 @@ Bash script that automates the installation and configuration of a CTFd server u
 
 Bash script for building, ingesting, and synchronizing CTF challenges with support for Docker containers and Docker Compose.
 
+### 3. Extras (`extras/`)
+
+Optional, opt-in add-ons, not installed by `setup.sh`: a CTFd plugin that records real client IPs behind Cloudflare, a Discord solve/first-blood bot, and a Python challenge sync. See [`extras/README.md`](extras/README.md).
+
 # Prerequisites
 
 ## For the CTFd installation script
