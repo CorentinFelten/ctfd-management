@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Deploys a challenge with two user-facing services (galvanize-e2e.yml only;
-# needs a Galvanize newer than v0.7.3): a web front end routed by Traefik and
+# needs Galvanize v0.7.5 or later): a web front end routed by Traefik and
 # an SSH-like service on a published port, both declared with compose
-# expose:. The connection info must list both endpoints, one per line,
-# ordered by service (shell, then web), and each must answer.
+# expose:, with show_tcp_ports so the published port is listed next to the
+# web URL. The connection info must list both endpoints, one per line (the
+# https:// URL, then the ssh:// port), and each must answer. The instance's
+# subdomain must start with the configured compose_project_prefix.
 
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/galvanize-api.sh"
@@ -29,6 +31,7 @@ type: zync
 playbook_name: custom_compose
 deploy_parameters:
   unique: false
+  show_tcp_ports: true
   expose:
     - service: web
       port: 80
@@ -78,13 +81,16 @@ section "Endpoints"
 mapfile -t lines <<< "$connection_info"
 printf '      %s\n' "${lines[@]}"
 ((${#lines[@]} == 2)) || fail "Expected 2 endpoints, one per line, got: $connection_info"
-[[ "${lines[0]}" =~ ^ssh://${INSTANCER_HOST//./\\.}:([0-9]+)$ ]] \
-    || fail "First endpoint is not the shell service's ssh:// port: ${lines[0]}"
-port="${BASH_REMATCH[1]}"
-[[ "${lines[1]}" =~ ^https://([^/]+\.${INSTANCER_HOST//./\\.})/$ ]] \
-    || fail "Second endpoint is not the web service's https:// URL: ${lines[1]}"
+[[ "${lines[0]}" =~ ^https://([^/]+\.${INSTANCER_HOST//./\\.})/$ ]] \
+    || fail "First endpoint is not the web service's https:// URL: ${lines[0]}"
 web_host="${BASH_REMATCH[1]}"
-pass "Both endpoints are reported: ssh:// on port $port, then https://$web_host/"
+[[ "${lines[1]}" =~ ^ssh://${INSTANCER_HOST//./\\.}:([0-9]+)$ ]] \
+    || fail "Second endpoint is not the shell service's ssh:// port: ${lines[1]}"
+port="${BASH_REMATCH[1]}"
+pass "Both endpoints are reported: https://$web_host/, then ssh:// on port $port"
+[[ "$web_host" == polypwn-* ]] \
+    || fail "Instance subdomain does not use the polypwn prefix: $web_host"
+pass "Instance subdomain uses the polypwn prefix"
 
 web_answers() { fetch "https://${web_host}/" -f 2>/dev/null | grep "Welcome to nginx" >/dev/null; }
 wait_for "Traefik to route https://${web_host}/" 60 web_answers

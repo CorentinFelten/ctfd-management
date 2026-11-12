@@ -35,7 +35,7 @@ on:
         description: "Branch, tag or commit of that repository"
         required: true
       multi_endpoint:
-        description: "Also deploy a challenge with a web and an SSH-like service, and check both endpoints are reported (needs Galvanize after v0.7.3)"
+        description: "Also deploy a challenge with a web and an SSH-like service, and check both endpoints are reported (needs Galvanize v0.7.5 or later)"
         type: boolean
         default: true
       without_redis:
