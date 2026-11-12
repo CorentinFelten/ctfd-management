@@ -193,6 +193,7 @@ if [[ "$INSTANCER" == local ]]; then
     expect_yaml .instancer.ansible.inventory                           "${DOMAIN},"
     expect_yaml .instancer.ansible.user                                ansible-user
     expect_yaml .instancer.instancer_host                              "$INSTANCER_HOST"
+    expect_yaml .instancer.compose_project_prefix                      polypwn
     expect_yaml .instancer.redis.db                                    1
     expect_yaml .instancer.extra_deployment_parameters.traefik_network ctfd_infra_challenges
     pass "Galvanize config is filled in"
